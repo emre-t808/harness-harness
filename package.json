@@ -1,0 +1,45 @@
+{
+  "name": "harness-harness",
+  "version": "0.1.0",
+  "description": "The self-improving agentic harness for Claude Code",
+  "type": "module",
+  "bin": {
+    "harness-harness": "./bin/harness.js"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./assembler": "./src/lib/context-assembler.js",
+    "./analyzer": "./src/lib/weekly-analysis.js",
+    "./traces": "./src/lib/trace-utils.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "templates/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test src/**/*.test.js",
+    "lint": "echo 'No linter configured yet'"
+  },
+  "keywords": [
+    "claude-code",
+    "ai",
+    "harness",
+    "context-management",
+    "developer-tools",
+    "self-improving",
+    "agentic"
+  ],
+  "author": "Emre Tuncbilek",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emre-t808/harness-harness.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
