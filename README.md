@@ -2,23 +2,21 @@
 
 **The self-improving agentic harness for Claude Code (which is a harness for Claude LLM).**
 
-Coding agents harness llms. But who harnesses these coding agents? Meet Harness Harness. 
+Coding agents harness LLMs. But who harnesses these coding agents?
 
-It is a self-organizing harness that works alongside your existing hooks and keeps your agent focused, updated, reminded, refueled and learn over time automatically.
+Meet **Harness Harness** — a self-organizing harness that works alongside your existing hooks and keeps your agent **focused**, **updated**, **reminded**, **refueled**, and **learning** over time, automatically.
 
-Disclaimer: At the moment Harness Harness is only works with Claude Code, others are on the way. Use at your own risk (and enjoyment). All comments and suggestions are welcome.
+> **Disclaimer:** Harness Harness currently works with Claude Code only. Support for other coding agents is on the way. Use at your own risk (and enjoyment). All comments and suggestions are welcome.
 
 ## What It Does
 
-Harness Harness is a context management system that sits between you and Claude Code. It observes what context Claude actually uses, measures its effectiveness, and continuously evolves to deliver better results.
+Claude Code is a harness for the Claude LLM. Harness Harness is a harness for Claude Code. It observes what context your agent actually uses, measures its effectiveness, and continuously evolves to deliver better results — without you having to manually tune anything.
 
-**Instead of manually managing CLAUDE.md and hoping for the best, you get:**
-
-- **Intent-based routing** — Different rules for different tasks. Frontend work gets design system rules. Backend work gets API conventions. No more dumping everything into every prompt.
-- **Effectiveness scoring** — Every rule is scored by how often Claude actually references it. Rules that help get promoted. Rules that waste tokens get demoted.
-- **Budget-aware assembly** — Context fills four priority slots (identity, route rules, working memory, traces) within a token budget. No more overflowing the context window with low-value information.
-- **Session continuity** — Working state (objectives, decisions, blockers) persists to the filesystem. When Claude's context compacts, nothing is lost.
-- **Self-improvement loop** — Weekly analysis generates proposals to optimize your route configs. Reordering happens automatically; promotions and demotions go through you.
+- **Focused** — Intent-based routing loads only the rules that matter for each task. Frontend work gets design system rules. Backend work gets API conventions. No more dumping everything into every prompt.
+- **Updated** — Session state (objectives, decisions, blockers) persists to the filesystem. When Claude's context compacts, nothing is lost. Your agent always knows what it was doing.
+- **Reminded** — Budget-aware assembly fills four priority slots (identity, route rules, working memory, traces) within a token budget. The right rules are always present, in the right order.
+- **Refueled** — After compaction, critical context is re-injected automatically. Your agent recovers from context compression instead of losing its way.
+- **Learning** — Every rule is scored by how often Claude actually references it. Weekly analysis generates proposals to optimize your config. Rules that help get promoted. Rules that waste tokens get demoted. The harness improves itself.
 
 ## How It Works
 
@@ -250,10 +248,13 @@ No. The assembler runs in <100ms. Trace capture is async and adds <20ms per tool
 Traces capture tool names, file paths, and output sizes — not file contents or message text. Summaries analyze which rules were referenced, not what you discussed.
 
 **Can I use this with other AI coding tools?**
-Currently designed for Claude Code's hook system. The libraries are generic and could be adapted for other tools with hook/plugin support.
+Currently designed for Claude Code's hook system. Support for other coding agents is planned. The core libraries (intent classification, effectiveness scoring, budget assembly) are generic and could be adapted for any tool with hook/plugin support.
 
 **What happens if I delete .harness/?**
 Claude Code continues to work normally. You lose your route configs, effectiveness history, and session state. Traces in .claude/traces/ are unaffected.
+
+**Does this work with my existing hooks?**
+Yes. Harness Harness is designed to work *alongside* your existing hooks, not replace them. All HH hooks are prefixed `hh-` to avoid collisions. The `init` command detects conflicts and offers three modes: `--merge` (install alongside), `--replace` (backup and replace), or `--trace-only` (just observe, don't inject context).
 
 ## License
 

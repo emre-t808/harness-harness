@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness Harness — Technical Documentation</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0A0A0A;
+    --bg-surface: #111113;
+    --bg-elevated: #18181B;
+    --bg-hover: #1E1E22;
+    --border: #27272A;
+    --border-bright: #3F3F46;
+    --text: #FAFAFA;
+    --text-muted: #A1A1AA;
+    --text-dim: #71717A;
+    --emerald: #10B981;
+    --emerald-dim: #064E3B;
+    --emerald-glow: #10B98130;
+    --amber: #F59E0B;
+    --amber-dim: #78350F;
+    --amber-glow: #F59E0B20;
+    --red: #EF4444;
+    --red-dim: #7F1D1D;
+    --blue: #3B82F6;
+    --blue-dim: #1E3A5F;
+    --purple: #A78BFA;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.025;
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  a { color: var(--emerald); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 32px; }
+  section { padding: 80px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: none; }
+
+  h1 { font-family: var(--mono); font-size: 72px; font-weight: 300; letter-spacing: -3px; line-height: 1.05; margin-bottom: 24px; }
+  h2 { font-family: var(--mono); font-size: 36px; font-weight: 400; letter-spacing: -1.5px; line-height: 1.2; margin-bottom: 32px; }
+  h3 { font-family: var(--mono); font-size: 20px; font-weight: 500; margin-bottom: 16px; }
+  h4 { font-family: var(--mono); font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 12px; }
+
+  p { margin-bottom: 16px; color: var(--text-muted); max-width: 72ch; }
+  p.lead { font-size: 20px; line-height: 1.6; color: var(--text); font-weight: 300; }
+
+  .accent { color: var(--emerald); }
+  .amber { color: var(--amber); }
+  .dim { color: var(--text-dim); }
+
+  /* ── NAV ── */
+  nav { position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--border); backdrop-filter: blur(12px); background: rgba(10, 10, 10, 0.9); }
+  nav .container { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  nav .logo { font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  nav .logo .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); animation: pulse 2s ease-in-out infinite; }
+  nav .links { display: flex; gap: 24px; }
+  nav .links a { font-size: 13px; color: var(--text-dim); font-family: var(--mono); transition: color 0.2s; }
+  nav .links a:hover { color: var(--emerald); text-decoration: none; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 120px 0 80px;
+    background:
+      radial-gradient(ellipse at 20% 50%, var(--emerald-glow) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, var(--amber-glow) 0%, transparent 50%),
+      var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hero .tagline { font-family: var(--mono); font-size: 13px; color: var(--emerald); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+  .hero .tagline::before { content: ''; width: 32px; height: 1px; background: var(--emerald); }
+  .hero .subtitle { font-size: 22px; color: var(--text-muted); font-weight: 300; max-width: 640px; line-height: 1.6; }
+  .hero .hook-line { font-size: 17px; color: var(--text); font-weight: 400; margin-top: 20px; margin-bottom: 24px; max-width: 600px; line-height: 1.7; font-style: italic; }
+  .hero .version-badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-dim); margin-top: 24px; }
+  .hero .disclaimer { margin-top: 20px; font-size: 13px; color: var(--text-dim); max-width: 560px; padding: 12px 16px; border-left: 2px solid var(--amber-dim); background: rgba(245, 158, 11, 0.03); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+
+  /* ── CARDS ── */
+  .card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 28px; transition: border-color 0.2s; }
+  .card:hover { border-color: var(--border-bright); }
+  .card--glow-emerald { box-shadow: inset 0 1px 0 0 var(--emerald-dim); }
+  .card--glow-amber { box-shadow: inset 0 1px 0 0 var(--amber-dim); }
+  .card--glow-red { box-shadow: inset 0 1px 0 0 var(--red-dim); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+
+  @media (max-width: 768px) {
+    .grid-2, .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; }
+    h1 { font-size: 40px; letter-spacing: -1px; }
+    h2 { font-size: 28px; }
+    .hero { padding: 80px 0 60px; }
+  }
+
+  /* ── CODE ── */
+  code { font-family: var(--mono); font-size: 13px; background: var(--bg-elevated); padding: 2px 6px; border-radius: var(--radius-sm); color: var(--emerald); }
+  pre { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 24px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.8; color: var(--text-muted); margin-bottom: 24px; }
+  pre .comment { color: var(--text-dim); }
+  pre .keyword { color: var(--purple); }
+  pre .string { color: var(--emerald); }
+  pre .tag { color: var(--amber); }
+  pre .number { color: var(--blue); }
+
+  /* ── TABLES ── */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 24px; }
+  thead th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border-bright); font-weight: 500; }
+  tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); vertical-align: top; }
+  tbody tr:hover td { background: var(--bg-hover); }
+
+  /* ── BADGES ── */
+  .badge { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .badge--emerald { background: var(--emerald-dim); color: var(--emerald); }
+  .badge--amber { background: var(--amber-dim); color: var(--amber); }
+  .badge--red { background: var(--red-dim); color: var(--red); }
+  .badge--blue { background: var(--blue-dim); color: var(--blue); }
+  .badge--neutral { background: var(--bg-elevated); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .score { font-family: var(--mono); font-weight: 700; font-size: 28px; }
+  .score--emerald { color: var(--emerald); }
+  .score--amber { color: var(--amber); }
+
+  .auto-badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: var(--radius-sm); }
+  .auto-badge--auto { background: var(--emerald-dim); color: var(--emerald); }
+  .auto-badge--manual { background: var(--amber-dim); color: var(--amber); }
+  .auto-badge--safe { background: #1a3a2a; color: #4ade80; }
+
+  /* ── SEPARATOR ── */
+  .sep { display: flex; align-items: center; gap: 16px; margin: 48px 0; font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; }
+  .sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── SAFETY ── */
+  .safety { border-left: 3px solid var(--amber); padding-left: 20px; margin: 24px 0; }
+  .safety h4 { color: var(--amber); margin-bottom: 8px; }
+  .safety ul { padding-left: 20px; color: var(--text-muted); font-size: 14px; }
+  .safety li { margin-bottom: 6px; }
+
+  /* ── FIVE PILLARS (the memorable element) ── */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    margin: 48px 0 32px;
+  }
+
+  .pillar {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 32px 16px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.3s;
+  }
+
+  .pillar:hover {
+    border-color: var(--emerald);
+    transform: translateY(-4px);
+    z-index: 2;
+  }
+
+  .pillar:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+  .pillar:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+
+  .pillar-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .pillar h3 {
+    font-size: 15px;
+    margin-bottom: 10px;
+    color: var(--emerald);
+    letter-spacing: 0.5px;
+  }
+
+  .pillar p { font-size: 12px; color: var(--text-dim); margin: 0 auto; line-height: 1.6; }
+
+  .pillar .pillar-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--emerald);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s ease;
+  }
+
+  .pillar:hover .pillar-bar { transform: scaleX(1); }
+
+  @media (max-width: 900px) {
+    .pillars { grid-template-columns: 1fr; gap: 8px; }
+    .pillar { border-radius: var(--radius-md) !important; }
+  }
+
+  /* ── LIFECYCLE TIMELINE ── */
+  .lifecycle { position: relative; }
+  .lifecycle-track { position: absolute; left: 40px; top: 0; bottom: 0; width: 2px; background: linear-gradient(to bottom, var(--emerald-dim), var(--border), var(--amber-dim), var(--border), var(--emerald-dim)); }
+
+  .lifecycle-event { position: relative; padding-left: 84px; margin-bottom: 40px; opacity: 0; transform: translateY(16px); animation: fadeSlideIn 0.5s ease-out forwards; }
+  .lifecycle-event:nth-child(1) { animation-delay: 0.1s; }
+  .lifecycle-event:nth-child(2) { animation-delay: 0.2s; }
+  .lifecycle-event:nth-child(3) { animation-delay: 0.3s; }
+  .lifecycle-event:nth-child(4) { animation-delay: 0.4s; }
+  .lifecycle-event:nth-child(5) { animation-delay: 0.5s; }
+  .lifecycle-event:nth-child(6) { animation-delay: 0.6s; }
+  .lifecycle-event:nth-child(7) { animation-delay: 0.7s; }
+  .lifecycle-event:nth-child(8) { animation-delay: 0.8s; }
+
+  @keyframes fadeSlideIn { to { opacity: 1; transform: translateY(0); } }
+
+  .lifecycle-dot { position: absolute; left: 32px; top: 6px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-bright); background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .lifecycle-dot::after { content: ''; width: 8px; height: 8px; border-radius: 50%; }
+  .lifecycle-dot--emerald { border-color: var(--emerald); }
+  .lifecycle-dot--emerald::after { background: var(--emerald); }
+  .lifecycle-dot--amber { border-color: var(--amber); }
+  .lifecycle-dot--amber::after { background: var(--amber); }
+  .lifecycle-dot--blue { border-color: var(--blue); }
+  .lifecycle-dot--blue::after { background: var(--blue); }
+  .lifecycle-dot--dim { border-color: var(--text-dim); }
+  .lifecycle-dot--dim::after { background: var(--text-dim); }
+
+  .lifecycle-event h3 { margin-bottom: 4px; }
+  .lifecycle-event .meta { font-size: 13px; color: var(--text-dim); font-family: var(--mono); margin-bottom: 8px; }
+  .lifecycle-event p { font-size: 14px; }
+
+  /* ── PIPELINE ── */
+  .pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; padding: 24px 0; }
+  .pipeline-stage { flex: 1; min-width: 180px; text-align: center; position: relative; padding: 0 8px; }
+  .pipeline-stage:not(:last-child)::after { content: ''; position: absolute; right: -6px; top: 28px; width: 12px; height: 12px; border-right: 2px solid var(--emerald); border-top: 2px solid var(--emerald); transform: rotate(45deg); opacity: 0.5; }
+  .pipeline-icon { width: 56px; height: 56px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 24px; border: 1px solid var(--border); background: var(--bg-surface); }
+  .pipeline-stage h4 { letter-spacing: 1px; margin-bottom: 8px; }
+  .pipeline-stage p { font-size: 13px; text-align: center; margin: 0 auto; }
+
+  @media (max-width: 900px) {
+    .pipeline { flex-direction: column; align-items: stretch; }
+    .pipeline-stage:not(:last-child)::after { display: none; }
+  }
+
+  /* ── BUDGET BAR ── */
+  .budget-bar { display: flex; height: 40px; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); }
+  .budget-bar__segment { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; font-weight: 500; white-space: nowrap; padding: 0 4px; }
+  .budget-bar__segment--identity { background: var(--emerald-dim); color: var(--emerald); flex: 15; }
+  .budget-bar__segment--route { background: #1E3A5F; color: var(--blue); flex: 25; }
+  .budget-bar__segment--memory { background: var(--amber-dim); color: var(--amber); flex: 15; }
+  .budget-bar__segment--traces { background: #3B1F5E; color: var(--purple); flex: 10; }
+  .budget-bar__segment--reserved { background: var(--bg-elevated); color: var(--text-dim); flex: 35; }
+
+  .budget-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--text-muted); }
+  .budget-legend__item { display: flex; align-items: center; gap: 6px; }
+  .budget-legend__dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* ── SELF-IMPROVEMENT LOOP ── */
+  .loop-diagram { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; margin: 40px 0; }
+  .loop-step { background: var(--bg-surface); border: 1px solid var(--border); padding: 24px 16px; text-align: center; position: relative; transition: border-color 0.3s, background 0.3s; }
+  .loop-step:hover { border-color: var(--emerald); background: var(--bg-elevated); }
+  .loop-step .step-num { font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
+  .loop-step h3 { font-size: 16px; margin-bottom: 8px; }
+  .loop-step p { font-size: 12px; color: var(--text-dim); margin: 0; }
+  .loop-step:not(:last-child)::after { content: '\2192'; position: absolute; right: -12px; top: 50%; transform: translateY(-50%); color: var(--emerald); font-size: 18px; z-index: 2; }
+  .loop-return { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; padding: 12px; font-family: var(--mono); font-size: 13px; color: var(--emerald); position: relative; }
+  .loop-return::before { content: ''; position: absolute; top: 0; left: 10%; right: 10%; height: 1px; background: linear-gradient(to right, transparent, var(--emerald), transparent); }
+
+  @media (max-width: 900px) {
+    .loop-diagram { grid-template-columns: 1fr; }
+    .loop-step:not(:last-child)::after { content: '\2193'; right: 50%; top: auto; bottom: -12px; transform: translateX(50%); }
+  }
+
+  /* ── SCORE ROWS ── */
+  .score-row { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+  .score-row:last-child { border-bottom: none; }
+  .score-value { font-family: var(--mono); font-weight: 700; font-size: 24px; min-width: 60px; text-align: right; }
+  .score-bar { flex: 1; height: 6px; background: var(--bg-elevated); border-radius: 3px; overflow: hidden; }
+  .score-bar__fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .score-label { font-family: var(--mono); font-size: 13px; min-width: 140px; }
+  .score-desc { font-size: 13px; color: var(--text-dim); }
+
+  /* ── DIRECTORY TREE ── */
+  .tree { font-family: var(--mono); font-size: 13px; line-height: 2; color: var(--text-muted); padding: 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+  .tree .dir { color: var(--blue); }
+  .tree .file--hook { color: var(--emerald); }
+  .tree .file--config { color: var(--amber); }
+  .tree .annotation { color: var(--text-dim); font-style: italic; }
+
+  /* ── HARNESS STACK DIAGRAM ── */
+  .stack { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 40px auto; max-width: 480px; }
+  .stack-layer { width: 100%; text-align: center; padding: 20px; border: 1px solid var(--border); font-family: var(--mono); position: relative; }
+  .stack-layer:not(:last-child) { border-bottom: none; }
+  .stack-layer:first-child { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .stack-layer:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+  .stack-layer .layer-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 4px; }
+  .stack-layer .layer-name { font-size: 18px; font-weight: 500; }
+  .stack-arrow { font-size: 20px; color: var(--text-dim); padding: 4px 0; letter-spacing: 4px; }
+
+  footer { padding: 48px 0; border-top: 1px solid var(--border); text-align: center; font-size: 13px; color: var(--text-dim); }
+  footer a { color: var(--text-dim); }
+  footer a:hover { color: var(--emerald); }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <div class="logo"><div class="dot"></div> harness-harness</div>
+    <div class="links">
+      <a href="#what">what</a>
+      <a href="#why">why</a>
+      <a href="#architecture">architecture</a>
+      <a href="#hooks">hooks</a>
+      <a href="#assembler">assembler</a>
+      <a href="#scoring">scoring</a>
+      <a href="#learning">learning</a>
+      <a href="#install">install</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="container">
+    <div class="tagline">Technical Documentation</div>
+    <h1>harness<br><span class="accent">harness</span></h1>
+    <p class="hook-line">
+      Coding agents harness LLMs. But who harnesses these coding agents?
+    </p>
+    <p class="subtitle">
+      A self-organizing harness that works alongside your existing hooks and keeps your agent
+      focused, updated, reminded, refueled, and learning over time &mdash; automatically.
+    </p>
+    <div class="disclaimer">
+      Currently works with Claude Code only. Support for other coding agents is on the way. Use at your own risk (and enjoyment). All comments and suggestions are welcome.
+    </div>
+    <div class="version-badge">v0.1.0 &middot; BSL 1.1 &middot; Node 20+</div>
+  </div>
+</header>
+
+<!-- SECTION: WHAT IS THIS -->
+<section id="what">
+  <div class="container">
+    <h4>The Stack</h4>
+    <h2>A harness for the harness</h2>
+
+    <p class="lead">
+      Claude is an LLM. Claude Code is a harness that makes Claude useful as a coding agent.
+      Harness Harness is a harness for Claude Code &mdash; it makes the coding agent itself better over time.
+    </p>
+
+    <div class="stack">
+      <div class="stack-layer" style="background: var(--emerald-dim);">
+        <div class="layer-label">Layer 3</div>
+        <div class="layer-name" style="color: var(--emerald);">Harness Harness</div>
+        <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0;">Observes, scores, and evolves the agent's context</p>
+      </div>
+      <div class="stack-layer" style="background: var(--bg-elevated);">
+        <div class="layer-label">Layer 2</div>
+        <div class="layer-name">Claude Code</div>
+        <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0;">The coding agent &mdash; tools, hooks, system prompt</p>
+      </div>
+      <div class="stack-layer" style="background: var(--bg-surface);">
+        <div class="layer-label">Layer 1</div>
+        <div class="layer-name" style="color: var(--text-dim);">Claude LLM</div>
+        <p style="font-size: 12px; color: var(--text-dim); margin: 4px 0 0;">The foundation model</p>
+      </div>
+    </div>
+
+    <p>
+      Claude Code already has a hook system &mdash; lifecycle events where you can inject context, trace tool calls,
+      and react to changes. Harness Harness plugs into this hook system to add five capabilities that the
+      agent doesn't have on its own:
+    </p>
+  </div>
+</section>
+
+<!-- SECTION: THE FIVE PILLARS -->
+<section id="why">
+  <div class="container">
+    <h4>Five Capabilities</h4>
+    <h2>What Harness Harness gives your agent</h2>
+
+    <div class="pillars">
+      <div class="pillar">
+        <span class="pillar-icon">&#9678;</span>
+        <h3>Focused</h3>
+        <p>Intent-based routing loads only the rules that matter for each task. Frontend work gets design rules. Backend gets API conventions. No dumping everything into every prompt.</p>
+        <div class="pillar-bar"></div>
+      </div>
+      <div class="pillar">
+        <span class="pillar-icon">&#8635;</span>
+        <h3>Updated</h3>
+        <p>Session state persists to the filesystem. Objectives, decisions, and blockers survive context compaction. Your agent always knows what it was doing.</p>
+        <div class="pillar-bar"></div>
+      </div>
+      <div class="pillar">
+        <span class="pillar-icon">&#9888;</span>
+        <h3>Reminded</h3>
+        <p>Budget-aware assembly fills four priority slots with the right rules in the right order. Anti-patterns and conventions are always present when needed.</p>
+        <div class="pillar-bar"></div>
+      </div>
+      <div class="pillar">
+        <span class="pillar-icon">&#9889;</span>
+        <h3>Refueled</h3>
+        <p>After context compaction, critical context is re-injected automatically. Compaction becomes beneficial garbage collection instead of information loss.</p>
+        <div class="pillar-bar"></div>
+      </div>
+      <div class="pillar">
+        <span class="pillar-icon">&#10697;</span>
+        <h3>Learning</h3>
+        <p>Every rule is scored by actual usage. Weekly analysis proposes optimizations. Rules that help get promoted. Rules that waste tokens get demoted. The harness improves itself.</p>
+        <div class="pillar-bar"></div>
+      </div>
+    </div>
+
+    <div class="grid-4" style="margin-top: 32px;">
+      <div class="card" style="text-align: center;">
+        <div class="score score--emerald">65%</div>
+        <p style="font-size: 13px; margin: 8px 0 0;">Context budget saved by intent routing vs. dump-everything</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="score score--emerald">&lt;100<span style="font-size: 14px;">ms</span></div>
+        <p style="font-size: 13px; margin: 8px 0 0;">Assembler execution time per prompt</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="score score--amber">7</div>
+        <p style="font-size: 13px; margin: 8px 0 0;">Claude Code hook events wired</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="score score--emerald">0</div>
+        <p style="font-size: 13px; margin: 8px 0 0;">Manual config changes needed after setup</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: ARCHITECTURE -->
+<section id="architecture">
+  <div class="container">
+    <h4>Architecture</h4>
+    <h2>How it all fits together</h2>
+
+    <p>Harness Harness creates <code>.harness/</code> for its own state (routes, memory, sessions)
+    and installs <code>hh-</code> prefixed hooks into <code>.claude/hooks/</code>.
+    It works <em>alongside</em> your existing hooks &mdash; never replaces them unless you ask.</p>
+
+    <div class="grid-2" style="margin-top: 40px; gap: 32px;">
+      <div class="tree">
+        <span class="dir">your-project/</span><br>
+        &nbsp;&nbsp;<span class="dir">.harness/</span> <span class="annotation">  harness state (yours to edit)</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="file--config">config.json</span> <span class="annotation">  custom intents, file-rule map</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">routes/</span> <span class="annotation">  intent-based route configs</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">general.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">coding-frontend.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">coding-backend.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">coding-meta.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">memory/</span> <span class="annotation">  effectiveness data</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--config">harness-effectiveness.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--config">route-overrides.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">trace-patterns.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file">work-status.md</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">sessions/</span> <span class="annotation">  session state directories</span><br>
+        &nbsp;&nbsp;<span class="dir">.claude/</span> <span class="annotation">  Claude Code hooks &amp; traces</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">hooks/</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-assembler.js</span> <span class="annotation">  smart context assembler</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-assembler-fallback.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-trace-capture.sh</span> <span class="annotation">  JSONL event tracer</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-state-nudge.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-session-summary.js</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-session-start.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-pre-compact.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-post-compact.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="file--hook">hh-session-end.sh</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">your-existing-hook.sh</span> <span class="annotation">  untouched</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="dir">traces/</span> <span class="annotation">  raw JSONL + manifests + summaries</span>
+      </div>
+
+      <div>
+        <h3>Works Alongside, Not Instead Of</h3>
+        <p>
+          <code>.harness/</code> is <em>your</em> configuration. Route configs, custom intents, effectiveness scores.
+          You edit these. You commit these. They define what context gets loaded for each type of task.
+        </p>
+        <p>
+          <code>.claude/hooks/</code> is the <em>runtime</em>. All HH hooks are prefixed with <code>hh-</code>.
+          Your existing hooks remain untouched and continue to fire alongside HH hooks.
+          Claude Code runs all hooks for an event in parallel &mdash; the most restrictive decision wins.
+        </p>
+
+        <div class="safety" style="margin-top: 32px;">
+          <h4>Coexistence Guarantees</h4>
+          <ul>
+            <li>All HH hooks prefixed <code>hh-</code> &mdash; never collides with your hooks</li>
+            <li><code>init</code> detects existing UserPromptSubmit hooks and warns before installing</li>
+            <li>Three modes: <code>--merge</code> (alongside), <code>--replace</code> (backup + replace), <code>--trace-only</code> (observe only)</li>
+            <li>Side-effect hooks (trace capture, session summary) are always safe &mdash; no stdout, no blocking</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: HOOK LIFECYCLE -->
+<section id="hooks">
+  <div class="container">
+    <h4>Hook Lifecycle</h4>
+    <h2>7 hooks that keep your agent<br>focused, updated, reminded, refueled</h2>
+
+    <p>Claude Code fires hooks at specific lifecycle moments. Harness Harness listens at 7 of these events.
+      Each hook is either a <em>context injector</em> (writes to stdout &rarr; Claude sees it) or
+      <em>side-effect only</em> (writes to disk, never interferes with Claude).</p>
+
+    <div class="sep">Session Timeline</div>
+
+    <div class="lifecycle" style="margin-top: 40px;">
+      <div class="lifecycle-track"></div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--emerald"></div>
+        <h3>SessionStart <span class="badge badge--emerald">context injector</span> <span class="badge badge--blue">Updated + Refueled</span></h3>
+        <div class="meta">hh-session-start.sh &middot; matcher: startup|resume|compact &middot; 5s</div>
+        <p>Creates session directory, injects git context (branch, uncommitted files, recent commits),
+          and restores session state if resuming or recovering from compaction. Your agent starts every
+          session knowing where it left off.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--emerald"></div>
+        <h3>UserPromptSubmit <span class="badge badge--emerald">context injector</span> <span class="badge badge--blue">Focused + Reminded</span></h3>
+        <div class="meta">hh-assembler.js + hh-assembler-fallback.sh &middot; 10s + 5s</div>
+        <p>The <strong>Smart Context Assembler</strong>. Classifies your message's intent,
+          loads the matching route config, fills budget slots with effectiveness-ranked rules, and outputs
+          a <code>&lt;harness-context&gt;</code> block. If the assembler crashes, the fallback injects
+          five critical rules so the agent is never completely unguided.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--blue"></div>
+        <h3>PostToolUse <span class="badge badge--neutral">side-effect only</span> <span class="badge badge--blue">Learning</span></h3>
+        <div class="meta">hh-trace-capture.sh &middot; matcher: (all tools) &middot; 5s</div>
+        <p>Fires after every tool call. Captures one JSONL event: timestamp, tool name, input summary,
+          output size, referenced rule IDs, files touched, and bash outcome. This trace data powers
+          the effectiveness scoring and self-improvement loop.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--amber"></div>
+        <h3>PostToolUse <span class="badge badge--amber">additionalContext</span> <span class="badge badge--blue">Updated</span></h3>
+        <div class="meta">hh-state-nudge.sh &middot; matcher: Edit|Write &middot; 5s</div>
+        <p>Fires only on edits/writes. Returns a small nudge asking the agent to update its session state file.
+          Keeps objectives, decisions, and blockers current across the session.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--dim"></div>
+        <h3>PreCompact <span class="badge badge--neutral">side-effect only</span> <span class="badge badge--blue">Updated</span></h3>
+        <div class="meta">hh-pre-compact.sh &middot; matcher: manual|auto &middot; 5s</div>
+        <p>Saves a snapshot of session state to disk before context compression. Ensures trace data is flushed.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--emerald"></div>
+        <h3>PostCompact <span class="badge badge--emerald">context injector</span> <span class="badge badge--blue">Refueled</span></h3>
+        <div class="meta">hh-post-compact.sh &middot; matcher: manual|auto &middot; 10s</div>
+        <p>Re-injects identity, session state, and active decisions after compaction. <strong>This is the
+          refueling moment</strong> &mdash; compaction becomes beneficial GC instead of information loss.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--blue"></div>
+        <h3>Stop <span class="badge badge--neutral">side-effect only</span> <span class="badge badge--blue">Learning</span></h3>
+        <div class="meta">hh-session-summary.js &middot; 30s</div>
+        <p>Reads trace JSONL, cross-references with the assembler manifest, scores every injected rule,
+          computes slot utilization, and writes a structured summary. This is the raw data that feeds
+          the self-improvement loop.</p>
+      </div>
+
+      <div class="lifecycle-event">
+        <div class="lifecycle-dot lifecycle-dot--dim"></div>
+        <h3>SessionEnd <span class="badge badge--neutral">side-effect only</span></h3>
+        <div class="meta">hh-session-end.sh &middot; 10s</div>
+        <p>Safety net. If the Stop hook failed, this ensures the session is archived and trace data preserved.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: SMART ASSEMBLER -->
+<section id="assembler">
+  <div class="container">
+    <h4>Smart Context Assembler</h4>
+    <h2>How the agent stays focused</h2>
+
+    <p>Every message triggers a 5-stage pipeline that runs in under 100ms:</p>
+
+    <div class="pipeline">
+      <div class="pipeline-stage">
+        <div class="pipeline-icon">1</div>
+        <h4>Classify</h4>
+        <p>Keyword matching: "build a dashboard" &rarr; <code>coding:frontend</code></p>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-icon">2</div>
+        <h4>Route</h4>
+        <p>Load <code>coding-frontend.md</code> with its budget and rule sets</p>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-icon">3</div>
+        <h4>Score</h4>
+        <p>Order files by measured effectiveness</p>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-icon">4</div>
+        <h4>Fill</h4>
+        <p>Fill 4 budget slots. Stop when budget reached.</p>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-icon">5</div>
+        <h4>Inject</h4>
+        <p>Write <code>&lt;harness-context&gt;</code> + manifest</p>
+      </div>
+    </div>
+
+    <div class="sep">Budget Slots</div>
+
+    <div class="budget-bar" style="margin-top: 24px;">
+      <div class="budget-bar__segment budget-bar__segment--identity">15% Identity</div>
+      <div class="budget-bar__segment budget-bar__segment--route">25% Route Rules</div>
+      <div class="budget-bar__segment budget-bar__segment--memory">15% Memory</div>
+      <div class="budget-bar__segment budget-bar__segment--traces">10% Traces</div>
+      <div class="budget-bar__segment budget-bar__segment--reserved">35% Reserved</div>
+    </div>
+
+    <div class="budget-legend">
+      <div class="budget-legend__item"><div class="budget-legend__dot" style="background: var(--emerald-dim);"></div> Identity &mdash; project description, always loaded</div>
+      <div class="budget-legend__item"><div class="budget-legend__dot" style="background: var(--blue-dim);"></div> Route Rules &mdash; task-specific rules + reference files</div>
+      <div class="budget-legend__item"><div class="budget-legend__dot" style="background: var(--amber-dim);"></div> Working Memory &mdash; session state, objectives, decisions</div>
+      <div class="budget-legend__item"><div class="budget-legend__dot" style="background: #3B1F5E;"></div> Traces &mdash; patterns from recent similar sessions</div>
+      <div class="budget-legend__item"><div class="budget-legend__dot" style="background: var(--bg-elevated);"></div> Reserved &mdash; left free for the agent's actual work</div>
+    </div>
+
+    <div class="sep">Intent Classification</div>
+
+    <table style="margin-top: 24px;">
+      <thead><tr><th>Intent</th><th>Keywords</th><th>Route File</th></tr></thead>
+      <tbody>
+        <tr><td><code>coding:frontend</code></td><td>dashboard, component, css, tsx, jsx, ui, frontend, react, vue, svelte, html</td><td>coding-frontend.md</td></tr>
+        <tr><td><code>coding:backend</code></td><td>typescript, function, api, endpoint, test, npm, build, debug, node, express</td><td>coding-backend.md</td></tr>
+        <tr><td><code>coding:meta</code></td><td>agent, hook, harness, skill, claude, context, settings, mcp, trace, route</td><td>coding-meta.md</td></tr>
+        <tr><td><code>writing:docs</code></td><td>document, readme, prd, report, summarize, handover, brief, spec</td><td>writing-docs.md</td></tr>
+        <tr><td><code>analyzing</code></td><td>count, metric, data, pipeline, analyze, analytics, benchmark</td><td>analyzing.md</td></tr>
+        <tr><td><code>general</code></td><td><span class="dim">fallback when no keywords match</span></td><td>general.md</td></tr>
+      </tbody>
+    </table>
+
+    <p>Add custom intents via <code>.harness/config.json</code>:</p>
+
+    <pre>{
+  <span class="string">"customIntents"</span>: [
+    [<span class="string">"coding:python"</span>, [<span class="string">"pandas"</span>, <span class="string">"numpy"</span>, <span class="string">"jupyter"</span>, <span class="string">"dataframe"</span>]],
+    [<span class="string">"infra"</span>, [<span class="string">"terraform"</span>, <span class="string">"docker"</span>, <span class="string">"k8s"</span>, <span class="string">"deploy"</span>]]
+  ]
+}</pre>
+
+    <div class="sep">Assembler Output</div>
+
+    <pre><span class="tag">&lt;harness-context</span> <span class="string">intent="coding:frontend"</span> <span class="string">session="abc123"</span> <span class="string">budget-used="17%"</span><span class="tag">&gt;</span>
+
+  <span class="tag">&lt;identity&gt;</span>
+  Your project description and conventions.
+  <span class="tag">&lt;/identity&gt;</span>
+
+  <span class="tag">&lt;route-rules&gt;</span>
+  <span class="comment">### Must Load</span>
+  - UI-001: Use design tokens, not raw values
+  - UI-002: All components must be accessible
+  <span class="comment">### Loaded Context Files (2 files, ~3200 tokens)</span>
+  <span class="tag">&lt;/route-rules&gt;</span>
+
+  <span class="tag">&lt;working-memory&gt;</span>
+  <span class="keyword">**Active Work:**</span> Implementing dashboard component
+  <span class="tag">&lt;/working-memory&gt;</span>
+
+  <span class="tag">&lt;trace-insights&gt;</span>
+  Recent sessions: UI-001 referenced 80%. UI-003 never used.
+  <span class="tag">&lt;/trace-insights&gt;</span>
+
+<span class="tag">&lt;/harness-context&gt;</span></pre>
+  </div>
+</section>
+
+<!-- SECTION: EFFECTIVENESS SCORING -->
+<section id="scoring">
+  <div class="container">
+    <h4>Effectiveness Scoring</h4>
+    <h2>Every rule is measured.<br>Nothing runs on faith.</h2>
+
+    <p>At session end, the summary hook reads traces and scores each injected rule:</p>
+
+    <div style="margin-top: 40px;">
+      <div class="score-row">
+        <div class="score-value" style="color: var(--text-dim);">0.0</div>
+        <div class="score-bar"><div class="score-bar__fill" style="width: 5%; background: var(--text-dim);"></div></div>
+        <div class="score-label"><span class="badge badge--neutral">ignored</span></div>
+        <div class="score-desc">Injected but never referenced. Wasted tokens.</div>
+      </div>
+      <div class="score-row">
+        <div class="score-value" style="color: var(--text-dim);">0.5</div>
+        <div class="score-bar"><div class="score-bar__fill" style="width: 25%; background: var(--blue);"></div></div>
+        <div class="score-label"><span class="badge badge--blue">implicit</span></div>
+        <div class="score-desc">Agent followed the rule without citing it.</div>
+      </div>
+      <div class="score-row">
+        <div class="score-value" style="color: var(--emerald);">1.0</div>
+        <div class="score-bar"><div class="score-bar__fill" style="width: 50%; background: var(--emerald);"></div></div>
+        <div class="score-label"><span class="badge badge--emerald">referenced</span></div>
+        <div class="score-desc">Agent explicitly mentioned the rule ID.</div>
+      </div>
+      <div class="score-row">
+        <div class="score-value" style="color: var(--amber);">2.0</div>
+        <div class="score-bar"><div class="score-bar__fill" style="width: 100%; background: var(--amber);"></div></div>
+        <div class="score-label"><span class="badge badge--amber">prevented-mistake</span></div>
+        <div class="score-desc">Agent read anti-pattern file, then made an edit. The rule actively prevented a mistake.</div>
+      </div>
+    </div>
+
+    <div class="sep">Detection Logic</div>
+
+    <pre><span class="keyword">for</span> (<span class="keyword">const</span> ruleId <span class="keyword">of</span> injectedRules) {
+  <span class="comment">// Was this rule ID mentioned in any tool response?</span>
+  <span class="keyword">if</span> (traceEvents.<span class="keyword">some</span>(e => e.referenced_context.<span class="keyword">includes</span>(ruleId)))
+    score = <span class="number">1.0</span>;  <span class="comment">// referenced</span>
+
+  <span class="comment">// Was an anti-pattern file read, then an edit followed within 3 events?</span>
+  <span class="keyword">for</span> (<span class="keyword">let</span> i = <span class="number">0</span>; i < traceEvents.length; i++) {
+    <span class="keyword">if</span> (traceEvents[i].tool === <span class="string">'Read'</span>
+      && traceEvents[i].input_summary.<span class="keyword">includes</span>(<span class="string">'anti-pattern'</span>)
+      && traceEvents[i].referenced_context.<span class="keyword">includes</span>(ruleId)) {
+      <span class="keyword">const</span> next3 = traceEvents.<span class="keyword">slice</span>(i+<span class="number">1</span>, i+<span class="number">4</span>);
+      <span class="keyword">if</span> (next3.<span class="keyword">some</span>(e => e.tool === <span class="string">'Edit'</span> || e.tool === <span class="string">'Write'</span>))
+        score = <span class="number">2.0</span>;  <span class="comment">// prevented-mistake</span>
+    }
+  }
+}</pre>
+  </div>
+</section>
+
+<!-- SECTION: SELF-IMPROVEMENT LOOP -->
+<section id="learning">
+  <div class="container">
+    <h4>Self-Improvement Loop</h4>
+    <h2>How the harness learns</h2>
+
+    <p>This is the self-organizing mechanism. After accumulating session data, the system analyzes which rules
+      help, which waste tokens, and proposes changes to its own configuration:</p>
+
+    <div class="grid-3" style="margin-top: 32px; margin-bottom: 48px;">
+      <div class="card card--glow-emerald">
+        <h3>Per-Session <span class="auto-badge auto-badge--auto">automatic</span></h3>
+        <p>Every session end: traces scored, utilization computed, summary written.</p>
+      </div>
+      <div class="card card--glow-amber">
+        <h3>Per-Week <span class="auto-badge auto-badge--auto">automatic</span></h3>
+        <p>Aggregate scores, generate proposals, auto-reorder by effectiveness.</p>
+      </div>
+      <div class="card card--glow-amber">
+        <h3>Per-Month <span class="auto-badge auto-badge--manual">human review</span></h3>
+        <p>Review proposals, approve/reject promotions and demotions.</p>
+      </div>
+    </div>
+
+    <div class="loop-diagram">
+      <div class="loop-step" style="border-radius: var(--radius-md) 0 0 0;">
+        <div class="step-num">Step 1</div>
+        <h3 class="accent">Observe</h3>
+        <p>Trace every tool call. Record which rules are referenced.</p>
+      </div>
+      <div class="loop-step">
+        <div class="step-num">Step 2</div>
+        <h3 class="accent">Analyze</h3>
+        <p>Aggregate with exponential moving average. Recent sessions weighted 2x.</p>
+      </div>
+      <div class="loop-step">
+        <div class="step-num">Step 3</div>
+        <h3 class="amber">Propose</h3>
+        <p>Generate promotions, demotions, budget changes based on thresholds.</p>
+      </div>
+      <div class="loop-step">
+        <div class="step-num">Step 4</div>
+        <h3 class="amber">Review</h3>
+        <p>Human approves or rejects. Rejected items never re-proposed.</p>
+      </div>
+      <div class="loop-step" style="border-radius: 0 var(--radius-md) 0 0;">
+        <div class="step-num">Step 5</div>
+        <h3 class="accent">Apply</h3>
+        <p>Update route configs. Commit to git. Next session is better.</p>
+      </div>
+      <div class="loop-return">&larr; Next session uses improved harness &rarr;</div>
+    </div>
+
+    <div class="sep">Proposal Thresholds</div>
+
+    <table>
+      <thead><tr><th>Condition</th><th>Proposal</th><th>Auto?</th></tr></thead>
+      <tbody>
+        <tr><td>Rule &gt;0.75 in all routes for 3+ weeks</td><td><span class="badge badge--emerald">Promote to Identity</span></td><td><span class="badge badge--amber">Human review</span></td></tr>
+        <tr><td>Rule &lt;0.10 in a route for 2+ weeks</td><td><span class="badge badge--red">Demote to Skip</span></td><td><span class="badge badge--amber">Human review</span></td></tr>
+        <tr><td>Route utilization &gt;70%</td><td>Increase budget by 5%</td><td><span class="badge badge--amber">Human review</span></td></tr>
+        <tr><td>Route utilization &lt;40%</td><td>Decrease budget by 5%</td><td><span class="badge badge--amber">Human review</span></td></tr>
+        <tr><td>"Load If Budget Allows" order changes</td><td>Reorder by score</td><td><span class="badge badge--emerald">Auto-applied</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="safety">
+      <h4>Safety Constraints</h4>
+      <ul>
+        <li><strong>Never auto-remove rules</strong> &mdash; only humans can move items to Skip</li>
+        <li><strong>prevented-mistake (2.0) protects safety nets</strong> &mdash; a rule with avg 0.0 but any prevented-mistake event is never proposed for demotion</li>
+        <li><strong>Rejected proposals persist</strong> &mdash; recorded with reason, never re-proposed</li>
+        <li><strong>Only reordering is auto-applied</strong> &mdash; no additions, removals, or section moves</li>
+        <li><strong>All changes committed to git</strong> &mdash; full history of every evolution</li>
+        <li><strong>Every mutating command supports <code>--dry-run</code></strong></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: HOOK COMPATIBILITY -->
+<section id="compatibility">
+  <div class="container">
+    <h4>Hook Compatibility</h4>
+    <h2>Playing nice with existing hooks</h2>
+
+    <p>Your project probably already has hooks. Harness Harness is designed to coexist.</p>
+
+    <table>
+      <thead><tr><th>Hook Event</th><th>HH Output</th><th>Conflict Risk</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td><code>SessionStart</code></td><td>stdout</td><td><span class="badge badge--neutral">Low</span></td><td>Additive &mdash; all stdout merged</td></tr>
+        <tr><td><code>UserPromptSubmit</code></td><td>stdout</td><td><span class="badge badge--red">High</span></td><td>Detect + warn. Offer merge/replace/trace-only</td></tr>
+        <tr><td><code>PostToolUse</code> (all)</td><td>none</td><td><span class="badge badge--emerald">None</span></td><td>Always safe &mdash; pure side-effect</td></tr>
+        <tr><td><code>PostToolUse</code> (Edit|Write)</td><td>additionalContext</td><td><span class="badge badge--neutral">Low</span></td><td>Merged &mdash; nudge is &lt;50 chars</td></tr>
+        <tr><td><code>PreCompact</code></td><td>none</td><td><span class="badge badge--emerald">None</span></td><td>Always safe</td></tr>
+        <tr><td><code>PostCompact</code></td><td>stdout</td><td><span class="badge badge--neutral">Low</span></td><td>Additive</td></tr>
+        <tr><td><code>Stop</code></td><td>none</td><td><span class="badge badge--emerald">None</span></td><td>Always safe &mdash; never blocks</td></tr>
+        <tr><td><code>SessionEnd</code></td><td>none</td><td><span class="badge badge--emerald">None</span></td><td>Always safe</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid-3" style="margin-top: 32px;">
+      <div class="card">
+        <h3>--merge</h3>
+        <p>Install alongside existing hooks. Both fire in parallel. User accepts potential double context.</p>
+        <p style="font-size: 13px; color: var(--text-dim);">Best for: projects with non-conflicting hooks</p>
+      </div>
+      <div class="card">
+        <h3>--replace</h3>
+        <p>Back up existing UserPromptSubmit hooks to <code>.harness/hooks-backup/</code>, replace with assembler.</p>
+        <p style="font-size: 13px; color: var(--text-dim);">Best for: migrating from manual hooks</p>
+      </div>
+      <div class="card">
+        <h3>--trace-only</h3>
+        <p>Only install tracing. No context injection. Keep your system but gain effectiveness scoring.</p>
+        <p style="font-size: 13px; color: var(--text-dim);">Best for: evaluating before committing</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: INSTALL -->
+<section id="install">
+  <div class="container">
+    <h4>Getting Started</h4>
+    <h2>Install &amp; Commands</h2>
+
+    <pre><span class="comment"># Install globally</span>
+npm install -g harness-harness
+
+<span class="comment"># Or run without installing</span>
+npx harness-harness init
+
+<span class="comment"># Initialize in your project</span>
+cd my-project
+harness-harness init
+
+<span class="comment"># Use Claude Code normally — tracing starts automatically</span>
+
+<span class="comment"># After a few sessions, check your dashboard</span>
+harness-harness health
+
+<span class="comment"># Run analysis</span>
+harness-harness analyze
+
+<span class="comment"># Apply approved proposals</span>
+harness-harness apply</pre>
+
+    <table style="margin-top: 32px;">
+      <thead><tr><th>Command</th><th>Description</th><th>Flags</th></tr></thead>
+      <tbody>
+        <tr><td><code>init</code></td><td>Scaffold harness, install hooks, create route templates</td><td><code>--merge</code> <code>--replace</code> <code>--trace-only</code> <code>--force</code></td></tr>
+        <tr><td><code>health</code></td><td>Effectiveness dashboard: scores, waste, proposals</td><td>&mdash;</td></tr>
+        <tr><td><code>analyze</code></td><td>Run analysis, generate proposals, auto-reorder routes</td><td><code>--dry-run</code> <code>--days &lt;n&gt;</code></td></tr>
+        <tr><td><code>apply</code></td><td>Apply approved route override proposals</td><td><code>--dry-run</code></td></tr>
+        <tr><td><code>cleanup</code></td><td>Delete expired traces (&gt;30 days), trim index</td><td><code>--dry-run</code></td></tr>
+        <tr><td><code>routes list</code></td><td>List routes with budget breakdown</td><td>&mdash;</td></tr>
+        <tr><td><code>routes create</code></td><td>Create a custom route from template</td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+
+    <div class="sep">Programmatic API</div>
+
+    <pre><span class="keyword">import</span> { classifyIntent, assembleContext, scoreReferencedContext } <span class="keyword">from</span> <span class="string">'harness-harness'</span>;
+<span class="keyword">import</span> { assembleContext } <span class="keyword">from</span> <span class="string">'harness-harness/assembler'</span>;
+<span class="keyword">import</span> { aggregateScores } <span class="keyword">from</span> <span class="string">'harness-harness/analyzer'</span>;
+<span class="keyword">import</span> { classifyIntent } <span class="keyword">from</span> <span class="string">'harness-harness/traces'</span>;</pre>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <p>
+      <strong style="color: var(--text);">harness-harness</strong> v0.1.0 &middot;
+      <a href="https://github.com/emre-t808/harness-harness">GitHub</a> &middot;
+      BSL 1.1 (Apache 2.0 after April 2029) &middot;
+      Built by Emre Tuncbilek
+    </p>
+    <p style="margin-top: 8px; font-size: 12px;">
+      Currently works with Claude Code only. Support for other coding agents is on the way.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
