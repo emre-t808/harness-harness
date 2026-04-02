@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * session-summary.js — Stop/PreCompact hook
+ * hh-session-summary.js — Stop hook
  *
  * Reads the current session's trace JSONL, scores effectiveness,
  * and writes a structured summary.
  *
- * Input:  JSON on stdin with session_id (or $CLAUDE_SESSION_ID)
- * Output: NONE — no stdout
+ * IMPORTANT: Checks stop_hook_active to prevent infinite loops.
+ *
+ * Input:  JSON on stdin with { session_id, stop_hook_active }
+ * Output: NONE — no stdout (must not inject context)
  * Side effects:
  *   1. Writes {session}-summary.md to .claude/traces/{date}/
  *   2. Appends to .claude/traces/index.md
@@ -17,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 
-const PROJECT_DIR = '{{PROJECT_DIR}}';
+const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || '{{PROJECT_DIR}}';
 const TRACES_DIR = path.join(PROJECT_DIR, '.claude', 'traces');
 const INDEX_FILE = path.join(TRACES_DIR, 'index.md');
 const PATTERNS_FILE = path.join(PROJECT_DIR, '.harness', 'memory', 'trace-patterns.md');
@@ -67,7 +69,7 @@ function scoreReferencedContext(events, rules) {
       const evt = events[i];
       if (evt.tool === 'Read' && (evt.input_summary || '').includes('anti-pattern') &&
           (evt.referenced_context || []).includes(ruleId)) {
-        if (events.slice(i+1, i+4).some(e => e.tool === 'Edit' || e.tool === 'Write')) {
+        if (events.slice(i + 1, i + 4).some(e => e.tool === 'Edit' || e.tool === 'Write')) {
           score = 2.0; evidence = 'prevented-mistake'; break;
         }
       }
@@ -123,11 +125,21 @@ function ensureFile(filePath, header) {
 
 async function main() {
   let sessionId = 'unknown';
+  let stopHookActive = false;
+
   try {
     const raw = await readStdin();
     const parsed = parseJsonSafe(raw.trim());
-    if (parsed && parsed.session_id) sessionId = parsed.session_id;
-    else if (process.env.CLAUDE_SESSION_ID) sessionId = process.env.CLAUDE_SESSION_ID;
+    if (parsed) {
+      if (parsed.session_id) sessionId = parsed.session_id;
+      // CRITICAL: prevent infinite loop if Stop hook causes continuation
+      if (parsed.stop_hook_active === true) {
+        process.exit(0);
+      }
+    }
+    if (sessionId === 'unknown' && process.env.CLAUDE_SESSION_ID) {
+      sessionId = process.env.CLAUDE_SESSION_ID;
+    }
   } catch {
     if (process.env.CLAUDE_SESSION_ID) sessionId = process.env.CLAUDE_SESSION_ID;
   }
@@ -141,8 +153,11 @@ async function main() {
   const rules = collectRules(events);
   const scores = scoreReferencedContext(events, rules);
 
+  const uniqueFiles = [...new Set(events.flatMap(e => e.files_touched || []))].sort();
+
   const lines = [];
-  lines.push(`## Session ${sessionId} — ${date}`, '', `**Route:** ${intent}`, `**Tools:** ${events.length}`, '');
+  lines.push(`## Session ${sessionId} — ${date}`, '', `**Route:** ${intent}`, `**Tools:** ${events.length}`, `**Files:** ${uniqueFiles.length}`, '');
+
   if (rules.length > 0) {
     lines.push('### Effectiveness Scores', '', '| Context | Score | Evidence |', '|---------|-------|----------|');
     for (const r of rules) {
@@ -152,8 +167,29 @@ async function main() {
     lines.push('');
   }
 
+  lines.push('### Files Touched', '');
+  if (uniqueFiles.length > 0) {
+    for (const f of uniqueFiles) lines.push(`- ${f}`);
+  } else {
+    lines.push('_None_');
+  }
+  lines.push('');
+
+  const totalBytes = events.reduce((sum, e) => sum + (e.output_size || 0), 0);
+  lines.push('### Token Utilization', '', `- Output bytes: ${totalBytes}`, `- Estimated tokens: ~${Math.round(totalBytes / 4)}`, '');
+
   let summary = lines.join('\n');
 
+  // Append session state info
+  const stateFile = path.join(SESSIONS_DIR, sessionId, 'state.md');
+  if (fs.existsSync(stateFile)) {
+    const stateContent = fs.readFileSync(stateFile, 'utf8');
+    const objMatch = stateContent.match(/## Current Objective\n(.+)/);
+    const objective = objMatch && !objMatch[1].startsWith('(') ? objMatch[1].trim() : '(not set)';
+    summary += `\n### Session State\n\n- Objective: ${objective}\n`;
+  }
+
+  // Append slot utilization from manifest
   const manifestFile = path.join(TRACES_DIR, date, `${sessionId}-manifest.json`);
   if (fs.existsSync(manifestFile)) {
     try {
@@ -162,19 +198,22 @@ async function main() {
     } catch { /* skip */ }
   }
 
+  // Write summary
   const traceDir = path.join(TRACES_DIR, date);
   fs.mkdirSync(traceDir, { recursive: true });
   fs.writeFileSync(path.join(traceDir, `${sessionId}-summary.md`), summary, 'utf8');
 
+  // Update index
   const allRefs = [...new Set(events.flatMap(e => e.referenced_context || []))];
   ensureFile(INDEX_FILE, '# Session Trace Index\n');
   fs.appendFileSync(INDEX_FILE, `- ${sessionId} | ${date} | ${intent} | ${events.length} tools | ${allRefs.length} refs\n`);
 
+  // Update trace patterns
   ensureFile(PATTERNS_FILE, '# Trace Patterns\n\nSession stats appended by session-summary hook.\n');
-  fs.appendFileSync(PATTERNS_FILE, `\n### ${date} — ${sessionId} (${intent})\n- Tools: ${events.length}\n- Referenced: ${allRefs.join(', ') || 'none'}\n`);
+  fs.appendFileSync(PATTERNS_FILE, `\n### ${date} — ${sessionId} (${intent})\n- Tools: ${events.length}\n- Referenced: ${allRefs.join(', ') || 'none'}\n- Files: ${uniqueFiles.length} unique\n`);
 }
 
 main().catch(err => {
-  process.stderr.write(`[session-summary] ${err.message}\n`);
+  process.stderr.write(`[hh-session-summary] ${err.message}\n`);
   process.exit(0);
 });

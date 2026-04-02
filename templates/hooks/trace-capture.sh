@@ -1,11 +1,11 @@
 #!/bin/bash
-# trace-capture.sh — PostToolUse hook: appends one JSONL line per tool event
+# hh-trace-capture.sh — PostToolUse hook: appends one JSONL line per tool event
 #
 # Input:  JSON on stdin with: tool_name, tool_input, tool_response, session_id
 # Output: NONE (must not inject context into Claude)
 # Side effect: appends to .claude/traces/{YYYY-MM-DD}/{session}.jsonl
 
-PROJECT_DIR="{{PROJECT_DIR}}"
+PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 DATE_DIR=$(date -u +%Y-%m-%d)
 SESSION="${CLAUDE_SESSION_ID:-unknown}"
 

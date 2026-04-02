@@ -1,15 +1,17 @@
 /**
  * init command — Scaffold Harness Harness into a project
  *
+ * Modes:
+ *   (default)     Detect conflicts, warn if found, install in full mode
+ *   --merge       Install alongside existing hooks (accept double injection)
+ *   --replace     Back up existing UserPromptSubmit hooks, replace with assembler
+ *   --trace-only  Only install tracing (PostToolUse + Stop) — no assembler
+ *   --force       Reinitialize even if .harness/ already exists
+ *
  * Creates:
- *   .harness/
- *     config.json         — harness configuration
- *     routes/             — intent route configs (from templates)
- *     memory/             — effectiveness scores, overrides, patterns
- *     sessions/           — session state directories
- *   .claude/
- *     hooks/              — trace-capture, session-summary, state-nudge, assembler-fallback
- *     settings.json       — updated with hook entries (merged, not overwritten)
+ *   .harness/           config, routes, memory, sessions
+ *   .claude/hooks/      hh-* hook files
+ *   .claude/settings.json  updated with matcher-group hook entries
  */
 
 import fs from 'fs';
@@ -20,19 +22,42 @@ import { resolvePaths } from '../lib/paths.js';
 const __filename = fileURLToPath(import.meta.url);
 const TEMPLATES_DIR = path.resolve(path.dirname(__filename), '..', '..', 'templates');
 
+// All hook templates with their metadata
+const ALL_HOOKS = [
+  // Context injection hooks
+  { src: 'session-start.sh', dest: 'hh-session-start.sh', group: 'context' },
+  { src: 'assembler-fallback.sh', dest: 'hh-assembler-fallback.sh', group: 'context' },
+  { src: 'post-compact.sh', dest: 'hh-post-compact.sh', group: 'context' },
+
+  // Side-effect hooks (always safe)
+  { src: 'trace-capture.sh', dest: 'hh-trace-capture.sh', group: 'trace' },
+  { src: 'state-nudge.sh', dest: 'hh-state-nudge.sh', group: 'trace' },
+  { src: 'session-summary.js', dest: 'hh-session-summary.js', group: 'trace' },
+  { src: 'pre-compact.sh', dest: 'hh-pre-compact.sh', group: 'trace' },
+  { src: 'session-end.sh', dest: 'hh-session-end.sh', group: 'trace' },
+];
+
 export async function init(projectDir, flags) {
   const force = flags.includes('--force');
+  const mergeMode = flags.includes('--merge');
+  const replaceMode = flags.includes('--replace');
+  const traceOnly = flags.includes('--trace-only');
   const paths = resolvePaths(projectDir);
 
   console.log('');
   console.log('  Harness Harness — init');
   console.log(`  Project: ${projectDir}`);
+
+  if (traceOnly) console.log('  Mode: trace-only (no assembler, no context injection)');
+  else if (replaceMode) console.log('  Mode: replace (backing up existing UserPromptSubmit hooks)');
+  else if (mergeMode) console.log('  Mode: merge (installing alongside existing hooks)');
+  else console.log('  Mode: full (with conflict detection)');
+
   console.log('');
 
   // Check if already initialized
   if (fs.existsSync(paths.harnessDir) && !force) {
     console.log('  .harness/ already exists. Use --force to reinitialize.');
-    console.log('  (This will NOT overwrite existing route configs or memory files.)');
     return;
   }
 
@@ -64,60 +89,83 @@ export async function init(projectDir, flags) {
   }
   console.log(`  Routes: ${routesCopied} templates installed (${routeTemplates.length - routesCopied} already exist)`);
 
-  // 3. Install hooks with project path substitution
-  const hookFiles = [
-    { src: 'trace-capture.sh', dest: 'hh-trace-capture.sh' },
-    { src: 'session-summary.js', dest: 'hh-session-summary.js' },
-    { src: 'state-nudge.sh', dest: 'hh-state-nudge.sh' },
-    { src: 'assembler-fallback.sh', dest: 'hh-assembler-fallback.sh' },
-  ];
+  // 3. Conflict detection (before installing hooks)
+  const conflicts = detectConflicts(paths);
+  if (conflicts.hasContextConflict && !mergeMode && !replaceMode && !traceOnly) {
+    console.log('');
+    console.log('  ⚠ Conflict detected: existing UserPromptSubmit hooks found');
+    console.log('  These hooks inject context into Claude:');
+    for (const cmd of conflicts.contextHookCommands) {
+      console.log(`    - ${cmd}`);
+    }
+    console.log('');
+    console.log('  Options:');
+    console.log('    harness-harness init --merge       Install alongside (double context)');
+    console.log('    harness-harness init --replace     Back up and replace existing hooks');
+    console.log('    harness-harness init --trace-only  Only trace, skip assembler');
+    console.log('');
+    console.log('  Defaulting to --merge (installing alongside existing hooks).');
+    console.log('');
+    // Default to merge rather than aborting — user was warned
+  }
 
-  for (const hook of hookFiles) {
+  // 4. Back up existing hooks if --replace
+  if (replaceMode && conflicts.hasContextConflict) {
+    backupExistingHooks(paths, conflicts);
+    console.log('  Backup: existing hooks saved to .harness/hooks-backup/');
+  }
+
+  // 5. Determine which hooks to install based on mode
+  const hooksToInstall = traceOnly
+    ? ALL_HOOKS.filter(h => h.group === 'trace')
+    : ALL_HOOKS;
+
+  // 6. Install hook files (no more {{PROJECT_DIR}} — hooks use $CLAUDE_PROJECT_DIR)
+  for (const hook of hooksToInstall) {
     const srcContent = fs.readFileSync(path.join(TEMPLATES_DIR, 'hooks', hook.src), 'utf8');
+    // Only substitute {{PROJECT_DIR}} in session-summary.js as fallback for env var
     const content = srcContent.replace(/\{\{PROJECT_DIR\}\}/g, projectDir);
     const destPath = path.join(paths.hooksDir, hook.dest);
     fs.writeFileSync(destPath, content, 'utf8');
-    // Make shell scripts executable
     if (hook.dest.endsWith('.sh')) {
       fs.chmodSync(destPath, 0o755);
     }
   }
-  console.log(`  Hooks: ${hookFiles.length} installed to .claude/hooks/`);
+  console.log(`  Hooks: ${hooksToInstall.length} installed to .claude/hooks/`);
 
-  // 4. Install assembler script (the UserPromptSubmit hook)
-  const assemblerSrc = path.resolve(path.dirname(__filename), '..', 'lib', 'context-assembler.js');
-  const assemblerDest = path.join(paths.hooksDir, 'hh-assembler.js');
-
-  // Create a thin wrapper that invokes the assembler with the project dir
-  const assemblerWrapper = `#!/usr/bin/env node
+  // 7. Install assembler (only in full/merge/replace mode)
+  if (!traceOnly) {
+    const assemblerSrc = path.resolve(path.dirname(__filename), '..', 'lib', 'context-assembler.js');
+    const assemblerWrapper = `#!/usr/bin/env node
 // Harness Harness — Smart Context Assembler (UserPromptSubmit hook)
 // Auto-generated by harness-harness init. Do not edit manually.
-import { main } from '${assemblerSrc}';
-main('${projectDir}').catch(() => process.exit(1));
+const projectDir = process.env.CLAUDE_PROJECT_DIR || '${projectDir}';
+import('${assemblerSrc}').then(m => m.main(projectDir)).catch(() => process.exit(1));
 `;
-  fs.writeFileSync(assemblerDest, assemblerWrapper, 'utf8');
-  console.log('  Assembler: installed as .claude/hooks/hh-assembler.js');
+    fs.writeFileSync(path.join(paths.hooksDir, 'hh-assembler.js'), assemblerWrapper, 'utf8');
+    console.log('  Assembler: installed as .claude/hooks/hh-assembler.js');
+  }
 
-  // 5. Update .claude/settings.json (merge, don't overwrite)
-  updateClaudeSettings(paths, projectDir);
+  // 8. Update .claude/settings.json with correct matcher group structure
+  updateClaudeSettings(paths, traceOnly, replaceMode);
   console.log('  Settings: .claude/settings.json updated with hook entries');
 
-  // 6. Create harness config
-  const configPath = paths.configFile;
-  if (!fs.existsSync(configPath)) {
+  // 9. Create harness config
+  if (!fs.existsSync(paths.configFile)) {
     const config = {
-      version: '0.1.0',
+      version: '0.2.0',
       projectDir,
       budgetTokens: 130000,
       customIntents: [],
       fileToRules: {},
       retentionDays: 30,
+      initMode: traceOnly ? 'trace-only' : replaceMode ? 'replace' : 'merge',
     };
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    fs.writeFileSync(paths.configFile, JSON.stringify(config, null, 2), 'utf8');
     console.log('  Config: .harness/config.json created');
   }
 
-  // 7. Create initial memory files
+  // 10. Create initial memory files
   const memoryFiles = [
     { path: paths.effectivenessFile, content: '## Harness Effectiveness Scores\n\nNo data yet. Scores will appear after your first analyzed session.\n' },
     { path: paths.overridesFile, content: '## Route Overrides\n\nNo proposals yet.\n' },
@@ -132,14 +180,10 @@ main('${projectDir}').catch(() => process.exit(1));
   }
   console.log('  Memory: initial files created');
 
-  // 8. Create .gitignore for harness
+  // 11. Create .gitignore for harness
   const gitignorePath = path.join(paths.harnessDir, '.gitignore');
   if (!fs.existsSync(gitignorePath)) {
-    fs.writeFileSync(gitignorePath, [
-      '# Harness Harness',
-      'sessions/archive/',
-      '',
-    ].join('\n'));
+    fs.writeFileSync(gitignorePath, '# Harness Harness\nsessions/archive/\nhooks-backup/\n');
   }
 
   console.log('');
@@ -147,14 +191,93 @@ main('${projectDir}').catch(() => process.exit(1));
   console.log('');
   console.log('  Next steps:');
   console.log('    1. Edit .harness/routes/general.md with your project identity and rules');
-  console.log('    2. Customize other routes in .harness/routes/ for your codebase');
-  console.log('    3. Map your rule files to IDs in .harness/config.json (fileToRules)');
-  console.log('    4. Start using Claude Code — the harness will begin tracing automatically');
-  console.log('    5. After a few sessions, run: harness-harness health');
+  console.log('    2. Customize routes in .harness/routes/ for your codebase');
+  console.log('    3. Map rule files to IDs in .harness/config.json (fileToRules)');
+  console.log('    4. Start using Claude Code — tracing begins automatically');
+  console.log('    5. After a few sessions: harness-harness health');
   console.log('');
 }
 
-function updateClaudeSettings(paths, projectDir) {
+// ---------------------------------------------------------------------------
+// Conflict detection
+// ---------------------------------------------------------------------------
+
+function detectConflicts(paths) {
+  const result = {
+    hasContextConflict: false,
+    contextHookCommands: [],
+    existingSettings: null,
+  };
+
+  if (!fs.existsSync(paths.claudeSettingsFile)) return result;
+
+  try {
+    const settings = JSON.parse(fs.readFileSync(paths.claudeSettingsFile, 'utf8'));
+    result.existingSettings = settings;
+
+    if (!settings.hooks) return result;
+
+    // Check UserPromptSubmit for existing context-injecting hooks
+    const upsGroups = settings.hooks.UserPromptSubmit || [];
+    for (const group of upsGroups) {
+      const hooks = group.hooks || [];
+      for (const hook of hooks) {
+        const cmd = hook.command || hook.url || '';
+        // Skip our own hooks
+        if (cmd.includes('hh-')) continue;
+        // Any non-HH UserPromptSubmit hook is a potential conflict
+        result.hasContextConflict = true;
+        result.contextHookCommands.push(cmd);
+      }
+    }
+
+    // Also check flat format (in case user has non-standard structure)
+    if (Array.isArray(upsGroups) && upsGroups.length > 0 && upsGroups[0].type) {
+      // Flat format detected — hooks directly in the array
+      for (const hook of upsGroups) {
+        const cmd = hook.command || hook.url || '';
+        if (cmd.includes('hh-')) continue;
+        if (cmd) {
+          result.hasContextConflict = true;
+          result.contextHookCommands.push(cmd);
+        }
+      }
+    }
+  } catch { /* parse error — treat as no conflicts */ }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Backup existing hooks
+// ---------------------------------------------------------------------------
+
+function backupExistingHooks(paths, conflicts) {
+  const backupDir = path.join(paths.harnessDir, 'hooks-backup');
+  fs.mkdirSync(backupDir, { recursive: true });
+
+  // Save the pre-init settings.json
+  if (fs.existsSync(paths.claudeSettingsFile)) {
+    fs.copyFileSync(
+      paths.claudeSettingsFile,
+      path.join(backupDir, `settings-backup-${Date.now()}.json`)
+    );
+  }
+
+  // Write a manifest of what was backed up
+  const manifest = {
+    backedUpAt: new Date().toISOString(),
+    conflictingHooks: conflicts.contextHookCommands,
+    note: 'These UserPromptSubmit hooks were replaced by Harness Harness. Restore by copying settings-backup-*.json back to .claude/settings.json.',
+  };
+  fs.writeFileSync(path.join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Settings.json update — CORRECT matcher group format
+// ---------------------------------------------------------------------------
+
+function updateClaudeSettings(paths, traceOnly, replaceMode) {
   let settings = {};
 
   if (fs.existsSync(paths.claudeSettingsFile)) {
@@ -167,64 +290,168 @@ function updateClaudeSettings(paths, projectDir) {
 
   if (!settings.hooks) settings.hooks = {};
 
-  // Define harness hooks
-  const harnessHooks = {
-    UserPromptSubmit: [
-      {
-        type: 'command',
-        command: `node ${path.join(paths.hooksDir, 'hh-assembler.js')}`,
-        timeout: 10000,
-      },
-      {
-        type: 'command',
-        command: `bash ${path.join(paths.hooksDir, 'hh-assembler-fallback.sh')}`,
-        timeout: 5000,
-      },
-    ],
-    PostToolUse: [
-      {
-        type: 'command',
-        command: `bash ${path.join(paths.hooksDir, 'hh-trace-capture.sh')}`,
-        timeout: 5000,
-      },
-    ],
-    Stop: [
-      {
-        type: 'command',
-        command: `node ${path.join(paths.hooksDir, 'hh-session-summary.js')}`,
-        timeout: 30000,
-      },
-    ],
-  };
-
-  // Add state-nudge for Edit and Write tools
-  const stateNudgeHook = {
-    type: 'command',
-    command: `bash ${path.join(paths.hooksDir, 'hh-state-nudge.sh')}`,
-    timeout: 5000,
-    matcher: {
-      tool_name: ['Edit', 'Write'],
-    },
-  };
-
-  // Merge hooks — add harness hooks without removing existing user hooks
-  for (const [event, hooks] of Object.entries(harnessHooks)) {
-    if (!settings.hooks[event]) settings.hooks[event] = [];
-
-    // Remove any existing harness-harness hooks (for re-init)
-    settings.hooks[event] = settings.hooks[event].filter(h =>
-      !(h.command && h.command.includes('hh-'))
-    );
-
-    // Add harness hooks
-    settings.hooks[event].push(...hooks);
+  // Helper: remove existing HH hooks from a matcher group array
+  function removeHHHooks(groups) {
+    if (!Array.isArray(groups)) return [];
+    return groups
+      .map(group => {
+        // Handle matcher-group format
+        if (group.hooks && Array.isArray(group.hooks)) {
+          const filtered = group.hooks.filter(h => {
+            const cmd = h.command || h.url || '';
+            return !cmd.includes('hh-');
+          });
+          if (filtered.length === 0) return null;
+          return { ...group, hooks: filtered };
+        }
+        // Handle flat format (legacy) — skip HH entries
+        const cmd = group.command || group.url || '';
+        if (cmd.includes('hh-')) return null;
+        return group;
+      })
+      .filter(Boolean);
   }
 
-  // Add state-nudge to PostToolUse if not already present
-  if (!settings.hooks.PostToolUse.some(h => h.command && h.command.includes('hh-state-nudge'))) {
-    settings.hooks.PostToolUse.push(stateNudgeHook);
+  // Helper: if replaceMode, also remove non-HH UserPromptSubmit hooks
+  function removeAllUPSHooks(groups) {
+    if (!Array.isArray(groups)) return [];
+    return []; // Replace mode: clear all UserPromptSubmit hooks
   }
 
+  const hooksDir = paths.hooksDir;
+
+  // -----------------------------------------------------------------------
+  // SessionStart — context injection (startup + resume + compact)
+  // -----------------------------------------------------------------------
+  if (!traceOnly) {
+    settings.hooks.SessionStart = removeHHHooks(settings.hooks.SessionStart || []);
+    settings.hooks.SessionStart.push({
+      matcher: 'startup|resume|compact',
+      hooks: [
+        {
+          type: 'command',
+          command: `bash "${path.join(hooksDir, 'hh-session-start.sh')}"`,
+          timeout: 5,
+        },
+      ],
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // UserPromptSubmit — Smart Assembler + fallback
+  // -----------------------------------------------------------------------
+  if (!traceOnly) {
+    if (replaceMode) {
+      settings.hooks.UserPromptSubmit = removeAllUPSHooks(settings.hooks.UserPromptSubmit || []);
+    } else {
+      settings.hooks.UserPromptSubmit = removeHHHooks(settings.hooks.UserPromptSubmit || []);
+    }
+    settings.hooks.UserPromptSubmit.push({
+      hooks: [
+        {
+          type: 'command',
+          command: `node "${path.join(hooksDir, 'hh-assembler.js')}"`,
+          timeout: 10,
+        },
+        {
+          type: 'command',
+          command: `bash "${path.join(hooksDir, 'hh-assembler-fallback.sh')}"`,
+          timeout: 5,
+        },
+      ],
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // PostToolUse — trace capture (all tools) + state nudge (Edit|Write)
+  // -----------------------------------------------------------------------
+  settings.hooks.PostToolUse = removeHHHooks(settings.hooks.PostToolUse || []);
+
+  // Trace capture: fires on ALL tool calls, side-effect only
+  settings.hooks.PostToolUse.push({
+    matcher: '',
+    hooks: [
+      {
+        type: 'command',
+        command: `bash "${path.join(hooksDir, 'hh-trace-capture.sh')}"`,
+        timeout: 5,
+      },
+    ],
+  });
+
+  // State nudge: fires on Edit|Write, returns additionalContext
+  settings.hooks.PostToolUse.push({
+    matcher: 'Edit|Write',
+    hooks: [
+      {
+        type: 'command',
+        command: `bash "${path.join(hooksDir, 'hh-state-nudge.sh')}"`,
+        timeout: 5,
+      },
+    ],
+  });
+
+  // -----------------------------------------------------------------------
+  // Stop — session summary
+  // -----------------------------------------------------------------------
+  settings.hooks.Stop = removeHHHooks(settings.hooks.Stop || []);
+  settings.hooks.Stop.push({
+    hooks: [
+      {
+        type: 'command',
+        command: `node "${path.join(hooksDir, 'hh-session-summary.js')}"`,
+        timeout: 30,
+      },
+    ],
+  });
+
+  // -----------------------------------------------------------------------
+  // PreCompact — save state before compaction (side-effect only)
+  // -----------------------------------------------------------------------
+  settings.hooks.PreCompact = removeHHHooks(settings.hooks.PreCompact || []);
+  settings.hooks.PreCompact.push({
+    matcher: 'manual|auto',
+    hooks: [
+      {
+        type: 'command',
+        command: `bash "${path.join(hooksDir, 'hh-pre-compact.sh')}"`,
+        timeout: 5,
+      },
+    ],
+  });
+
+  // -----------------------------------------------------------------------
+  // PostCompact — re-inject context after compaction
+  // -----------------------------------------------------------------------
+  if (!traceOnly) {
+    settings.hooks.PostCompact = removeHHHooks(settings.hooks.PostCompact || []);
+    settings.hooks.PostCompact.push({
+      matcher: 'manual|auto',
+      hooks: [
+        {
+          type: 'command',
+          command: `bash "${path.join(hooksDir, 'hh-post-compact.sh')}"`,
+          timeout: 10,
+        },
+      ],
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // SessionEnd — cleanup and fallback summary
+  // -----------------------------------------------------------------------
+  settings.hooks.SessionEnd = removeHHHooks(settings.hooks.SessionEnd || []);
+  settings.hooks.SessionEnd.push({
+    hooks: [
+      {
+        type: 'command',
+        command: `bash "${path.join(hooksDir, 'hh-session-end.sh')}"`,
+        timeout: 10,
+      },
+    ],
+  });
+
+  // Write settings
   fs.mkdirSync(path.dirname(paths.claudeSettingsFile), { recursive: true });
   fs.writeFileSync(paths.claudeSettingsFile, JSON.stringify(settings, null, 2), 'utf8');
 }

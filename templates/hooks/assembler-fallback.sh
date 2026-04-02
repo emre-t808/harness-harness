@@ -1,7 +1,7 @@
 #!/bin/bash
-# assembler-fallback.sh — Fallback when Smart Assembler fails
+# hh-assembler-fallback.sh — UserPromptSubmit fallback
 #
-# Checks if assembler produced output. If not, injects minimal rules.
+# Checks if the Smart Assembler produced output. If not, injects minimal context.
 
 MARKER_FILE="/tmp/harness-harness-assembler-success"
 SESSION_ID="${CLAUDE_SESSION_ID:-default}"
