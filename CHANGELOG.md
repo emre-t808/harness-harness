@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 (2026-04-02)
+
+### Documentation
+
+- Updated value proposition: "Coding agents harness LLMs — but who harnesses the coding agents?"
+- New five-pillar framing: Focused, Updated, Reminded, Refueled, Learning
+- Added technical documentation HTML page with architecture diagrams, hook lifecycle timeline, and self-improvement loop visualization
+- Added disclaimer about Claude Code-only support
+- Added hook compatibility FAQ to README
+
 ## 0.1.0 (2026-04-02)
 
 First public release.

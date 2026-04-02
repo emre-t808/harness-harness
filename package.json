@@ -1,6 +1,6 @@
 {
   "name": "harness-harness",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The self-improving agentic harness for Claude Code. Coding agents harness LLMs — but who harnesses the coding agents?",
   "type": "module",
   "bin": {
