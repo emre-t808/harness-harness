@@ -1,8 +1,10 @@
 # Harness Harness
 
-**The self-improving agentic harness for Claude Code.**
+**The self-improving agentic harness for Claude Code (which is a harness for Claude LLM).**
 
-Your AI coding agent forgets rules. It wastes context on irrelevant information. It can't tell which instructions actually help. Harness Harness fixes all of this — automatically.
+Coding agent harness llms. But who harnesses the coding agents? Meet Harness Harness. It is a self-organizing harness that works alongside your existing hooks and keeps your agent focused, updated, reminded, refueled and learn over time automatically.
+
+Disclaimer: At the moment Harness Harness is only works with Claude Code, others are on the way. Use at your own risk (and enjoyment). All comments and suggestions are welcome.
 
 ## What It Does
 
