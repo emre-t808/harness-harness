@@ -53,10 +53,9 @@ function printHelp() {
 `);
 }
 
-function printVersion() {
-  const pkg = JSON.parse(
-    (await import('fs')).readFileSync(new URL('../package.json', import.meta.url), 'utf8')
-  );
+async function printVersion() {
+  const { readFileSync } = await import('fs');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   console.log(`harness-harness v${pkg.version}`);
 }
 
