@@ -20,7 +20,8 @@ import { fileURLToPath } from 'url';
 import { resolvePaths } from '../lib/paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const TEMPLATES_DIR = path.resolve(path.dirname(__filename), '..', '..', 'templates');
+const PACKAGE_DIR = path.resolve(path.dirname(__filename), '..', '..');
+const TEMPLATES_DIR = path.join(PACKAGE_DIR, 'templates');
 
 // All hook templates with their metadata
 const ALL_HOOKS = [
@@ -123,8 +124,10 @@ export async function init(projectDir, flags) {
   // 6. Install hook files (no more {{PROJECT_DIR}} — hooks use $CLAUDE_PROJECT_DIR)
   for (const hook of hooksToInstall) {
     const srcContent = fs.readFileSync(path.join(TEMPLATES_DIR, 'hooks', hook.src), 'utf8');
-    // Only substitute {{PROJECT_DIR}} in session-summary.js as fallback for env var
-    const content = srcContent.replace(/\{\{PROJECT_DIR\}\}/g, projectDir);
+    // Substitute template variables
+    const content = srcContent
+      .replace(/\{\{PROJECT_DIR\}\}/g, projectDir)
+      .replace(/\{\{HARNESS_PACKAGE_DIR\}\}/g, PACKAGE_DIR);
     const destPath = path.join(paths.hooksDir, hook.dest);
     fs.writeFileSync(destPath, content, 'utf8');
     if (hook.dest.endsWith('.sh')) {

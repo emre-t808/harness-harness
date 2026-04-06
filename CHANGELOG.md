@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 (2026-04-06)
+
+### Features
+
+- **Automatic Daily Aggregation** — The Stop hook now checks if 24 hours have passed since the last analysis. If due, it runs the full pipeline inline: aggregate scores, generate proposals, auto-reorder routes, and clean up expired traces. No cron job or LaunchAgent needed.
+- **Session Start Notifications** — The SessionStart hook checks for pending notifications and displays a one-liner ("Harness: N pending notification(s)") so users know when new proposals are available.
+- **Notification System** — New `notifications.md` in `.harness/memory/` tracks daily analysis results for the next session to pick up.
+
+### Changes
+
+- `session-summary.js` (Stop hook) now calls `runDailyCheckIfDue()` after writing the session summary
+- `session-start.sh` (SessionStart hook) checks `notifications.md` for pending items
+- `init.js` substitutes `{{HARNESS_PACKAGE_DIR}}` in hook templates for dynamic imports
+- `paths.js` adds `notificationsFile` path
+- New public API exports: `runDailyCheckIfDue`, `runAggregation`, `getLastAggregationDate`, `writeNotification`
+- New package export: `harness-harness/daily-check`
+
+### Migration
+
+Existing users: run `harness-harness init --force` to reinstall hooks with daily aggregation support.
+
 ## 0.1.1 (2026-04-02)
 
 ### Documentation

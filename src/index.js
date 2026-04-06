@@ -11,3 +11,4 @@ export { create as createSession, archive as archiveSession, cleanup as cleanupS
 export { parseSummary, aggregateScores, generateProposals, formatEffectivenessReport, formatProposals } from './lib/weekly-analysis.js';
 export { parseOverrides, applyDemotion, applyPromotion, applyBudgetChange } from './lib/apply-overrides.js';
 export { cleanupTraceFiles, trimIndex } from './lib/trace-cleanup.js';
+export { runDailyCheckIfDue, runAggregation, getLastAggregationDate, writeNotification } from './lib/daily-check.js';

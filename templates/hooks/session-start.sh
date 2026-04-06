@@ -97,6 +97,16 @@ if [ -f "$WORK_STATUS" ]; then
   fi
 fi
 
+# Check for pending harness notifications
+NOTIFICATIONS_FILE="${HARNESS_DIR}/memory/notifications.md"
+if [ -f "$NOTIFICATIONS_FILE" ]; then
+  NOTIF_LINES=$(grep -c "^- " "$NOTIFICATIONS_FILE" 2>/dev/null || echo "0")
+  if [ "$NOTIF_LINES" -gt 0 ]; then
+    echo ""
+    echo "Harness: ${NOTIF_LINES} pending notification(s). Review with 'harness-harness health'"
+  fi
+fi
+
 echo "</session-start>"
 
 exit 0

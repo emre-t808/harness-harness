@@ -20,6 +20,7 @@ import path from 'path';
 import readline from 'readline';
 
 const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || '{{PROJECT_DIR}}';
+const HARNESS_PACKAGE_DIR = '{{HARNESS_PACKAGE_DIR}}';
 const TRACES_DIR = path.join(PROJECT_DIR, '.claude', 'traces');
 const INDEX_FILE = path.join(TRACES_DIR, 'index.md');
 const PATTERNS_FILE = path.join(PROJECT_DIR, '.harness', 'memory', 'trace-patterns.md');
@@ -211,6 +212,20 @@ async function main() {
   // Update trace patterns
   ensureFile(PATTERNS_FILE, '# Trace Patterns\n\nSession stats appended by session-summary hook.\n');
   fs.appendFileSync(PATTERNS_FILE, `\n### ${date} — ${sessionId} (${intent})\n- Tools: ${events.length}\n- Referenced: ${allRefs.join(', ') || 'none'}\n- Files: ${uniqueFiles.length} unique\n`);
+
+  // Daily aggregation check — piggybacks on Stop hook
+  if (HARNESS_PACKAGE_DIR && !HARNESS_PACKAGE_DIR.startsWith('{{')) {
+    try {
+      const dailyCheckPath = path.join(HARNESS_PACKAGE_DIR, 'src', 'lib', 'daily-check.js');
+      const { runDailyCheckIfDue } = await import(dailyCheckPath);
+      const result = await runDailyCheckIfDue(PROJECT_DIR);
+      if (result.ran) {
+        process.stderr.write(`[hh-daily-check] Aggregated ${result.sessionsAnalyzed} sessions, ${result.proposals} proposals\n`);
+      }
+    } catch (err) {
+      process.stderr.write(`[hh-daily-check] ${err.message}\n`);
+    }
+  }
 }
 
 main().catch(err => {

@@ -1,6 +1,6 @@
 {
   "name": "harness-harness",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "The self-improving agentic harness for Claude Code. Coding agents harness LLMs — but who harnesses the coding agents?",
   "type": "module",
   "bin": {
@@ -11,7 +11,8 @@
     ".": "./src/index.js",
     "./assembler": "./src/lib/context-assembler.js",
     "./analyzer": "./src/lib/weekly-analysis.js",
-    "./traces": "./src/lib/trace-utils.js"
+    "./traces": "./src/lib/trace-utils.js",
+    "./daily-check": "./src/lib/daily-check.js"
   },
   "files": [
     "bin/",

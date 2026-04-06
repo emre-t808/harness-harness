@@ -32,6 +32,7 @@ export function resolvePaths(projectDir) {
     memoryDir: join(harnessDir, 'memory'),
     effectivenessFile: join(harnessDir, 'memory', 'harness-effectiveness.md'),
     overridesFile: join(harnessDir, 'memory', 'route-overrides.md'),
+    notificationsFile: join(harnessDir, 'memory', 'notifications.md'),
     tracePatternsFile: join(harnessDir, 'memory', 'trace-patterns.md'),
     workStatusFile: join(harnessDir, 'memory', 'work-status.md'),
 
