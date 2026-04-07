@@ -15,6 +15,7 @@ import { join } from 'path';
 export function resolvePaths(projectDir) {
   const harnessDir = join(projectDir, '.harness');
   const claudeDir = join(projectDir, '.claude');
+  const localDir = join(harnessDir, 'local');
 
   return {
     projectDir,
@@ -46,6 +47,16 @@ export function resolvePaths(projectDir) {
     // Config
     configFile: join(harnessDir, 'config.json'),
     claudeSettingsFile: join(claudeDir, 'settings.json'),
+
+    // Local (per-developer, gitignored)
+    localDir,
+    localRoutesDir: join(localDir, 'routes'),
+    localMemoryDir: join(localDir, 'memory'),
+    localSessionsDir: join(localDir, 'sessions'),
+    localConfigFile: join(localDir, 'config.json'),
+    localEffectivenessFile: join(localDir, 'memory', 'harness-effectiveness.md'),
+    localOverridesFile: join(localDir, 'memory', 'route-overrides.md'),
+    localNotificationsFile: join(localDir, 'memory', 'notifications.md'),
 
     // Manifests live alongside traces
     manifestDir: (date) => join(claudeDir, 'traces', date),

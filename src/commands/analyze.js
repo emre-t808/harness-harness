@@ -15,6 +15,7 @@ import {
 export async function analyze(projectDir, flags) {
   const paths = resolvePaths(projectDir);
   const dryRun = flags.includes('--dry-run');
+  const teamMode = flags.includes('--team');
   const daysIdx = flags.indexOf('--days');
   const days = daysIdx >= 0 ? parseInt(flags[daysIdx + 1], 10) : 7;
 
@@ -68,16 +69,22 @@ export async function analyze(projectDir, flags) {
     console.log('--- Proposals (preview) ---');
     console.log(proposalReport);
   } else {
-    fs.writeFileSync(paths.effectivenessFile, report, 'utf8');
-    console.log(`Updated: ${paths.effectivenessFile}`);
+    // Write to local by default, shared with --team
+    const effFile = teamMode ? paths.effectivenessFile : (paths.localEffectivenessFile || paths.effectivenessFile);
+    const overFile = teamMode ? paths.overridesFile : (paths.localOverridesFile || paths.overridesFile);
 
-    const existing = fs.existsSync(paths.overridesFile) ? fs.readFileSync(paths.overridesFile, 'utf8') : '';
-    if (existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
-      fs.writeFileSync(paths.overridesFile, proposalReport, 'utf8');
+    fs.mkdirSync(path.dirname(effFile), { recursive: true });
+    fs.writeFileSync(effFile, report, 'utf8');
+    console.log(`Updated: ${effFile}`);
+
+    fs.mkdirSync(path.dirname(overFile), { recursive: true });
+    const existing = fs.existsSync(overFile) ? fs.readFileSync(overFile, 'utf8') : '';
+    if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
+      fs.writeFileSync(overFile, proposalReport, 'utf8');
     } else {
-      fs.appendFileSync(paths.overridesFile, '\n' + proposalReport, 'utf8');
+      fs.appendFileSync(overFile, '\n' + proposalReport, 'utf8');
     }
-    console.log(`Updated: ${paths.overridesFile}`);
+    console.log(`Updated: ${overFile}`);
   }
 
   // 6. Auto-reorder

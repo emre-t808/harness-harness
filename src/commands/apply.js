@@ -13,6 +13,7 @@ import {
 export async function apply(projectDir, flags) {
   const paths = resolvePaths(projectDir);
   const dryRun = flags.includes('--dry-run');
+  const forceMode = flags.includes('--force');
 
   console.log(`Harness Harness — Apply Overrides (${dryRun ? 'DRY RUN' : 'live'})`);
   console.log('');
@@ -23,7 +24,7 @@ export async function apply(projectDir, flags) {
   }
 
   const content = fs.readFileSync(paths.overridesFile, 'utf8');
-  const overrides = parseOverrides(content);
+  const overrides = parseOverrides(content, forceMode);
   const total = overrides.promotions.length + overrides.demotions.length + overrides.budgetChanges.length;
 
   console.log(`Found ${total} approved overrides`);
@@ -60,6 +61,8 @@ export async function apply(projectDir, flags) {
     }
   }
 
-  markApplied(appliedIndices, paths, dryRun);
+  const developer = process.env.USER || process.env.USERNAME || 'unknown';
+  markApplied(appliedIndices, paths, dryRun, developer);
+  console.log(`Applied by: ${developer} on ${new Date().toISOString().slice(0, 10)}`);
   console.log(`\nApplied ${appliedIndices.length} overrides.`);
 }

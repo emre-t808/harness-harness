@@ -60,9 +60,14 @@ async function printVersion() {
 }
 
 async function main() {
-  const projectDir = flags.includes('--project')
-    ? resolve(flags[flags.indexOf('--project') + 1])
-    : PROJECT_DIR;
+  let projectDir;
+  if (flags.includes('--project')) {
+    projectDir = resolve(flags[flags.indexOf('--project') + 1]);
+  } else {
+    // Check for positional path argument (first flag that isn't a --flag)
+    const positionalPath = flags.find(f => !f.startsWith('-'));
+    projectDir = positionalPath ? resolve(positionalPath) : PROJECT_DIR;
+  }
 
   if (!command || command === '--help' || command === '-h') {
     printHelp();

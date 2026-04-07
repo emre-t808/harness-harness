@@ -256,6 +256,55 @@ Claude Code continues to work normally. You lose your route configs, effectivene
 **Does this work with my existing hooks?**
 Yes. Harness Harness is designed to work *alongside* your existing hooks, not replace them. All HH hooks are prefixed `hh-` to avoid collisions. The `init` command detects conflicts and offers three modes: `--merge` (install alongside), `--replace` (backup and replace), or `--trace-only` (just observe, don't inject context).
 
+## Team Usage
+
+### Initial Setup (team lead, once per repo)
+
+```bash
+harness-harness init
+git add .harness/routes/ .harness/config.json .harness/memory/
+git commit -m "feat: add harness-harness config"
+```
+
+### Developer Onboarding (each developer, on clone)
+
+```bash
+git clone <repo>
+npm install        # or: npm i -g harness-harness
+harness-harness init --local-only
+```
+
+### What to Commit vs Gitignore
+
+| Commit (shared team config) | Gitignore (per-developer) |
+|------------------------------|---------------------------|
+| `.harness/routes/` | `.harness/local/` |
+| `.harness/config.json` | `.claude/hooks/hh-*` |
+| `.harness/memory/harness-effectiveness.md` | `.claude/settings.json` |
+| `.harness/memory/route-overrides.md` | `.claude/traces/` |
+
+### Developer Overrides
+
+Create files in `.harness/local/` to override team config without affecting others:
+
+```bash
+# Override a route's budget and rules
+cp .harness/routes/coding-backend.md .harness/local/routes/coding-backend.md
+# Edit .harness/local/routes/coding-backend.md with your preferences
+
+# Override project config (custom intents, fileToRules)
+echo '{"customIntents": [["coding:python", ["pandas"]]]}' > .harness/local/config.json
+```
+
+Developer overrides are gitignored. No PR needed, no team impact.
+
+### Sharing Improvements
+
+1. Run `harness-harness analyze` locally
+2. Review proposals: `cat .harness/local/memory/route-overrides.md`
+3. If a proposal benefits the team, edit the shared route in `.harness/routes/`
+4. Open a PR for team review
+
 ## License
 
 Business Source License 1.1 — Free for personal and non-commercial use. Commercial use requires a license. Converts to Apache 2.0 on April 1, 2029.

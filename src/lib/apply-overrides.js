@@ -13,7 +13,7 @@ import { resolvePaths } from './paths.js';
 // Override parsing
 // ---------------------------------------------------------------------------
 
-export function parseOverrides(content) {
+export function parseOverrides(content, forceMode = false) {
   const promotions = [];
   const demotions = [];
   const budgetChanges = [];
@@ -34,6 +34,8 @@ export function parseOverrides(content) {
       if (ruleMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {
+          const reviewerLine = findFieldLine(lines, i, 'Reviewed by:');
+          if (!reviewerLine && !forceMode) continue;
           promotions.push({ rule: ruleMatch[1], lineIndex: i });
         }
       }
@@ -44,7 +46,14 @@ export function parseOverrides(content) {
       if (demoteMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {
-          demotions.push({ rule: demoteMatch[1], route: demoteMatch[2].trim(), lineIndex: i });
+          const reviewerLine = findFieldLine(lines, i, 'Reviewed by:');
+          if (!reviewerLine && !forceMode) continue;
+          demotions.push({
+            rule: demoteMatch[1],
+            route: demoteMatch[2].trim(),
+            lineIndex: i,
+            reviewer: reviewerLine ? reviewerLine.match(/Reviewed by:\s*(.+)/)?.[1]?.trim() : null,
+          });
         }
       }
     }
@@ -54,6 +63,8 @@ export function parseOverrides(content) {
       if (budgetMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {
+          const reviewerLine = findFieldLine(lines, i, 'Reviewed by:');
+          if (!reviewerLine && !forceMode) continue;
           budgetChanges.push({ route: budgetMatch[1].trim(), description: budgetMatch[2].trim(), lineIndex: i });
         }
       }
@@ -66,6 +77,14 @@ export function parseOverrides(content) {
 function findStatusLine(lines, startIdx) {
   for (let j = startIdx + 1; j < Math.min(startIdx + 5, lines.length); j++) {
     if (lines[j].trim().startsWith('Status:')) return lines[j];
+  }
+  return null;
+}
+
+function findFieldLine(lines, startIdx, fieldName) {
+  for (let j = startIdx + 1; j < Math.min(startIdx + 6, lines.length); j++) {
+    if (lines[j].trim().startsWith(fieldName)) return lines[j];
+    if (lines[j].startsWith('- ') || lines[j].startsWith('### ')) break;
   }
   return null;
 }
@@ -200,7 +219,7 @@ export function parseBudgetDescription(routeConfigPath, description) {
   return { route_context: newRouteContext };
 }
 
-export function markApplied(lineIndices, paths, dryRun = false) {
+export function markApplied(lineIndices, paths, dryRun = false, developer = 'unknown') {
   if (dryRun || lineIndices.length === 0) return;
 
   const content = fs.readFileSync(paths.overridesFile, 'utf8');
@@ -210,7 +229,7 @@ export function markApplied(lineIndices, paths, dryRun = false) {
   for (const idx of lineIndices) {
     for (let j = idx + 1; j < Math.min(idx + 5, lines.length); j++) {
       if (lines[j].trim().startsWith('Status: approved')) {
-        lines[j] = lines[j].replace('Status: approved', `Status: applied (${today})`);
+        lines[j] = lines[j].replace('Status: approved', `Status: applied (${today} by ${developer})`);
         break;
       }
     }

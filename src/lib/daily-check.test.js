@@ -23,16 +23,18 @@ function createTempDir() {
 function setupProject(tmpDir) {
   const harnessDir = path.join(tmpDir, '.harness');
   const memoryDir = path.join(harnessDir, 'memory');
+  const localMemoryDir = path.join(harnessDir, 'local', 'memory');
   const routesDir = path.join(harnessDir, 'routes');
   const tracesDir = path.join(tmpDir, '.claude', 'traces');
   const traceIndex = path.join(tracesDir, 'index.md');
 
   fs.mkdirSync(memoryDir, { recursive: true });
+  fs.mkdirSync(localMemoryDir, { recursive: true });
   fs.mkdirSync(routesDir, { recursive: true });
   fs.mkdirSync(tracesDir, { recursive: true });
   fs.writeFileSync(traceIndex, '# Session Trace Index\n', 'utf8');
 
-  return { harnessDir, memoryDir, routesDir, tracesDir };
+  return { harnessDir, memoryDir, localMemoryDir, routesDir, tracesDir };
 }
 
 function writeSummary(tracesDir, date, sessionId, route, rules) {
@@ -190,12 +192,15 @@ describe('runAggregation', () => {
     assert.ok(result.routes.includes('coding-backend'));
     assert.equal(typeof result.proposals, 'number');
 
-    // Verify files were written
-    assert.ok(fs.existsSync(paths.effectivenessFile));
-    assert.ok(fs.existsSync(paths.overridesFile));
-    assert.ok(fs.existsSync(paths.notificationsFile));
+    // Verify files were written (now goes to local paths)
+    const effFile = paths.localEffectivenessFile || paths.effectivenessFile;
+    const overFile = paths.localOverridesFile || paths.overridesFile;
+    const notifFile = paths.localNotificationsFile || paths.notificationsFile;
+    assert.ok(fs.existsSync(effFile));
+    assert.ok(fs.existsSync(overFile));
+    assert.ok(fs.existsSync(notifFile));
 
-    const effContent = fs.readFileSync(paths.effectivenessFile, 'utf8');
+    const effContent = fs.readFileSync(effFile, 'utf8');
     assert.ok(effContent.includes('Last aggregated:'));
     assert.ok(effContent.includes('CS-001'));
   });
@@ -210,12 +215,14 @@ describe('runAggregation', () => {
 
     const paths = resolvePaths(tmpDir);
 
-    // Write existing overrides
-    fs.writeFileSync(paths.overridesFile, '## Existing Proposals\n\n- Some old proposal\n', 'utf8');
+    // Write existing overrides to the local path (where runAggregation now writes)
+    const targetOverFile = paths.localOverridesFile || paths.overridesFile;
+    fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
+    fs.writeFileSync(targetOverFile, '## Existing Proposals\n\n- Some old proposal\n', 'utf8');
 
     runAggregation(paths);
 
-    const content = fs.readFileSync(paths.overridesFile, 'utf8');
+    const content = fs.readFileSync(targetOverFile, 'utf8');
     assert.ok(content.includes('Existing Proposals'));
     assert.ok(content.includes('Proposed Adjustments'));
   });

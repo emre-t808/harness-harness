@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.1 (2026-04-07)
+
+### Bug Fixes — Multi-Repo & Team Support
+
+This release fixes 10 bugs that prevented Harness Harness from working correctly when multiple developers share a repo. After this update, a second developer can clone a harness-initialized repo, run `init --local-only`, and have fully working context injection with personal overrides.
+
+**Critical:**
+- **Assembler now works without npm install** — The generated `hh-assembler.js` hook uses a multi-strategy import (bare specifier first, absolute path fallback) so it works in projects without `harness-harness` in `node_modules`
+- **Partial budget overrides no longer clobber team values** — `parseRouteConfig` returns only explicitly-set budget keys; defaults are applied after merging (dev > team > defaults)
+
+**Moderate:**
+- **Fixed `\Z` regex anchor** — `loadWorkStatus` now uses `$` (valid JavaScript) instead of `\Z` (Python/PCRE only)
+- **Developer identity in audit trail** — `markApplied` now writes "applied (date by developer)" to the overrides file
+- **No more "undefined sessions"** — `formatProposals` uses fallback when session count is missing
+- **Last `/tmp/` marker fixed** — `assembler-fallback.sh` session marker moved to `~/.cache/harness-harness/`
+
+**Low:**
+- **Relative paths in settings.json** — Hook commands now use `./.claude/hooks/...` instead of absolute paths
+- **Atomic file locking** — `withFileLock` uses `O_EXCL` for race-free lock acquisition
+- **Dead code removed** — Unused `loadFileToRules` function deleted
+- **CLI accepts positional path** — `harness-harness init /path` now works (previously required `--project`)
+
+### Migration
+
+Existing users: run `harness-harness init --force` to regenerate hooks with all fixes.
+
 ## 0.2.0 (2026-04-06)
 
 ### Features

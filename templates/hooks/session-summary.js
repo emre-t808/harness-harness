@@ -25,6 +25,7 @@ const TRACES_DIR = path.join(PROJECT_DIR, '.claude', 'traces');
 const INDEX_FILE = path.join(TRACES_DIR, 'index.md');
 const PATTERNS_FILE = path.join(PROJECT_DIR, '.harness', 'memory', 'trace-patterns.md');
 const SESSIONS_DIR = path.join(PROJECT_DIR, '.harness', 'sessions');
+const DEVELOPER = process.env.USER || process.env.USERNAME || 'unknown';
 
 function todayDate() { return new Date().toISOString().slice(0, 10); }
 
@@ -157,7 +158,7 @@ async function main() {
   const uniqueFiles = [...new Set(events.flatMap(e => e.files_touched || []))].sort();
 
   const lines = [];
-  lines.push(`## Session ${sessionId} — ${date}`, '', `**Route:** ${intent}`, `**Tools:** ${events.length}`, `**Files:** ${uniqueFiles.length}`, '');
+  lines.push(`## Session ${sessionId} — ${date}`, '', `**Developer:** ${DEVELOPER}`, `**Route:** ${intent}`, `**Tools:** ${events.length}`, `**Files:** ${uniqueFiles.length}`, '');
 
   if (rules.length > 0) {
     lines.push('### Effectiveness Scores', '', '| Context | Score | Evidence |', '|---------|-------|----------|');

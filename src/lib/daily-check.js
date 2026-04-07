@@ -21,6 +21,7 @@ import {
   formatEffectivenessReport, formatProposals,
 } from './weekly-analysis.js';
 import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
+import { withFileLock } from './file-lock.js';
 
 const AGGREGATION_INTERVAL_HOURS = 24;
 const ANALYSIS_WINDOW_DAYS = 7;
@@ -46,12 +47,13 @@ export function getLastAggregationDate(effectivenessFile) {
  */
 export function writeNotification(notificationsFile, proposalCount, sessionCount) {
   const today = new Date().toISOString().slice(0, 10);
+  const developer = process.env.USER || process.env.USERNAME || 'unknown';
   const lines = ['## Harness Notifications', ''];
 
   if (proposalCount > 0) {
-    lines.push(`- [${today}] Daily analysis: ${sessionCount} sessions analyzed, ${proposalCount} new proposal(s). Review with \`harness-harness health\``);
+    lines.push(`- [${today}] Daily analysis by ${developer}: ${sessionCount} sessions analyzed, ${proposalCount} new proposal(s). Review with \`harness-harness health\``);
   } else {
-    lines.push(`- [${today}] Daily analysis: ${sessionCount} sessions analyzed, all scores within thresholds.`);
+    lines.push(`- [${today}] Daily analysis by ${developer}: ${sessionCount} sessions analyzed, all scores within thresholds.`);
   }
   lines.push('');
 
@@ -84,17 +86,24 @@ export function runAggregation(paths) {
   const report = formatEffectivenessReport(aggregated, parsed.length, allRoutes, ANALYSIS_WINDOW_DAYS, previousUtil);
   const proposalReport = formatProposals(proposals);
 
-  // Write effectiveness report
-  fs.mkdirSync(path.dirname(paths.effectivenessFile), { recursive: true });
-  fs.writeFileSync(paths.effectivenessFile, report, 'utf8');
+  // Write effectiveness report to local (locked)
+  const targetEffFile = paths.localEffectivenessFile || paths.effectivenessFile;
+  fs.mkdirSync(path.dirname(targetEffFile), { recursive: true });
+  withFileLock(targetEffFile, () => {
+    fs.writeFileSync(targetEffFile, report, 'utf8');
+  });
 
-  // Write proposals (append unless file is empty/placeholder)
-  const existing = fs.existsSync(paths.overridesFile) ? fs.readFileSync(paths.overridesFile, 'utf8') : '';
-  if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
-    fs.writeFileSync(paths.overridesFile, proposalReport, 'utf8');
-  } else {
-    fs.appendFileSync(paths.overridesFile, '\n' + proposalReport, 'utf8');
-  }
+  // Write proposals to local (locked)
+  const targetOverFile = paths.localOverridesFile || paths.overridesFile;
+  fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
+  withFileLock(targetOverFile, () => {
+    const existing = fs.existsSync(targetOverFile) ? fs.readFileSync(targetOverFile, 'utf8') : '';
+    if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
+      fs.writeFileSync(targetOverFile, proposalReport, 'utf8');
+    } else {
+      fs.appendFileSync(targetOverFile, '\n' + proposalReport, 'utf8');
+    }
+  });
 
   // Auto-reorder route configs
   let reorderedCount = 0;
@@ -122,7 +131,7 @@ export function runAggregation(paths) {
 
   // Notification
   const totalProposals = proposals.promotions.length + proposals.demotions.length + proposals.budgetChanges.length;
-  writeNotification(paths.notificationsFile, totalProposals, parsed.length);
+  writeNotification(paths.localNotificationsFile || paths.notificationsFile, totalProposals, parsed.length);
 
   return {
     ran: true,

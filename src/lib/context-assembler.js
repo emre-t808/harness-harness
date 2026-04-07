@@ -19,6 +19,8 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { execSync } from 'child_process';
 import { classifyIntent } from './trace-utils.js';
 import { resolvePaths } from './paths.js';
+import { join } from 'path';
+import { mergeRouteConfigs, mergeEffectivenessScores, mergeProjectConfigs } from './config-merge.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,7 +28,7 @@ import { resolvePaths } from './paths.js';
 
 const TOTAL_BUDGET_TOKENS = 130_000;
 
-const DEFAULT_BUDGET = {
+export const DEFAULT_BUDGET = {
   identity: 15,
   route_context: 25,
   working_memory: 15,
@@ -54,7 +56,7 @@ export function estimateTokens(text) {
 
 export function parseRouteConfig(content) {
   const meta = {};
-  const budget = { ...DEFAULT_BUDGET };
+  const budget = {};
   const sections = {};
 
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -93,16 +95,24 @@ export function parseRouteConfig(content) {
 
 export function loadRouteConfig(intent, paths) {
   const filename = intent.replace(/:/g, '-') + '.md';
-  let filePath = `${paths.routesDir}/${filename}`;
 
-  if (!existsSync(filePath)) {
-    filePath = `${paths.routesDir}/general.md`;
-  }
-  if (!existsSync(filePath)) {
-    return { meta: { intent }, budget: { ...DEFAULT_BUDGET }, sections: {} };
+  // Team route (shared, committed)
+  let teamPath = `${paths.routesDir}/${filename}`;
+  if (!existsSync(teamPath)) teamPath = `${paths.routesDir}/general.md`;
+  const teamRoute = existsSync(teamPath)
+    ? parseRouteConfig(readFileSync(teamPath, 'utf8'))
+    : { meta: { intent }, budget: {}, sections: {} };
+
+  // Developer route (local, gitignored)
+  if (paths.localRoutesDir) {
+    const devPath = `${paths.localRoutesDir}/${filename}`;
+    const devRoute = existsSync(devPath)
+      ? parseRouteConfig(readFileSync(devPath, 'utf8'))
+      : null;
+    return mergeRouteConfigs(teamRoute, devRoute);
   }
 
-  return parseRouteConfig(readFileSync(filePath, 'utf8'));
+  return teamRoute;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,9 +120,16 @@ export function loadRouteConfig(intent, paths) {
 // ---------------------------------------------------------------------------
 
 export function loadEffectivenessScores(paths) {
-  if (!existsSync(paths.effectivenessFile)) return {};
+  const teamScores = loadScoresFromFile(paths.effectivenessFile);
+  const devScores = paths.localEffectivenessFile
+    ? loadScoresFromFile(paths.localEffectivenessFile)
+    : {};
+  return mergeEffectivenessScores(teamScores, devScores);
+}
 
-  const content = readFileSync(paths.effectivenessFile, 'utf8');
+function loadScoresFromFile(filePath) {
+  if (!filePath || !existsSync(filePath)) return {};
+  const content = readFileSync(filePath, 'utf8');
   const scores = {};
   const rowRe = /^\|\s*([A-Z]{2,4}-\d{2,4})\s*\|[^|]*\|[^|]*\|\s*([\d.]+)\s*\|/gm;
   let match;
@@ -232,12 +249,15 @@ export function findActiveSession(paths) {
 export function loadWorkStatus(paths) {
   if (!existsSync(paths.workStatusFile)) return '';
   const content = readFileSync(paths.workStatusFile, 'utf8');
-  const match = content.match(/## Active Work\n([\s\S]*?)(?=\n## |\n---|\Z)/);
+  const match = content.match(/## Active Work\n([\s\S]*?)(?=\n## |\n---|$)/);
   return match ? match[1].trim() : content.slice(0, 2000);
 }
 
 function isFirstTurn(sessionId) {
-  const markerPath = `/tmp/harness-harness-session-${sessionId}`;
+  const cacheDir = process.env.XDG_RUNTIME_DIR
+    || join(process.env.HOME || '/tmp', '.cache', 'harness-harness');
+  try { mkdirSync(cacheDir, { recursive: true }); } catch { /* exists */ }
+  const markerPath = join(cacheDir, `session-${sessionId}`);
   if (existsSync(markerPath)) return false;
   try { writeFileSync(markerPath, new Date().toISOString()); } catch { /* non-fatal */ }
   return true;
@@ -474,18 +494,24 @@ export async function main(projectDir) {
 
   if (!message || !message.trim()) process.exit(1);
 
-  // Load custom intents from config if present
+  // Load config with team/developer merge
   let customIntents = [];
+  let fileToRulesConfig = {};
   if (existsSync(paths.configFile)) {
     try {
-      const config = JSON.parse(readFileSync(paths.configFile, 'utf8'));
+      let config = JSON.parse(readFileSync(paths.configFile, 'utf8'));
+      if (paths.localConfigFile && existsSync(paths.localConfigFile)) {
+        const devConfig = JSON.parse(readFileSync(paths.localConfigFile, 'utf8'));
+        config = mergeProjectConfigs(config, devConfig);
+      }
       customIntents = config.customIntents || [];
+      fileToRulesConfig = config.fileToRules || {};
     } catch { /* use defaults */ }
   }
 
   const intent = classifyIntent(message, customIntents);
   const route = loadRouteConfig(intent, paths);
-  const fileToRules = loadFileToRules(paths);
+  const fileToRules = fileToRulesConfig;
   const output = assembleContext(intent, route, paths, message, fileToRules);
   process.stdout.write(output);
 
@@ -502,19 +528,9 @@ export async function main(projectDir) {
 
   // Write success marker
   try {
-    writeFileSync('/tmp/harness-harness-assembler-success', new Date().toISOString());
+    const successDir = process.env.XDG_RUNTIME_DIR
+      || join(process.env.HOME || '/tmp', '.cache', 'harness-harness');
+    try { mkdirSync(successDir, { recursive: true }); } catch { /* exists */ }
+    writeFileSync(join(successDir, 'assembler-success'), Date.now().toString());
   } catch { /* non-fatal */ }
-}
-
-/**
- * Load file-to-rules mapping from config, or return empty.
- */
-function loadFileToRules(paths) {
-  if (!existsSync(paths.configFile)) return {};
-  try {
-    const config = JSON.parse(readFileSync(paths.configFile, 'utf8'));
-    return config.fileToRules || {};
-  } catch {
-    return {};
-  }
 }

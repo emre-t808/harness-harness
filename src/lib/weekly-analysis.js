@@ -320,6 +320,7 @@ export function formatEffectivenessReport(aggregated, summaryCount, allRoutes, d
 
 export function formatProposals(proposals) {
   const today = new Date().toISOString().slice(0, 10);
+  const developer = process.env.USER || process.env.USERNAME || 'unknown';
   const lines = [];
 
   lines.push('## Proposed Adjustments');
@@ -331,9 +332,10 @@ export function formatProposals(proposals) {
     lines.push('### Promotions');
     for (const p of proposals.promotions) {
       lines.push(`- ${p.rule} → Identity layer (all routes)`);
-      lines.push(`  Evidence: ${p.avgScore.toFixed(2)} avg across ${p.sessions} sessions`);
+      lines.push(`  Evidence: ${p.avgScore.toFixed(2)} avg across ${p.sessions ?? '?'} sessions`);
       lines.push(`  Routes: ${p.routes}`);
       lines.push('  Status: pending');
+      lines.push(`  Proposed by: ${developer} (${today})`);
     }
     lines.push('');
   }
@@ -342,8 +344,9 @@ export function formatProposals(proposals) {
     lines.push('### Demotions');
     for (const d of proposals.demotions) {
       lines.push(`- ${d.rule} → Skip in ${d.route}`);
-      lines.push(`  Evidence: ${d.avgScore.toFixed(2)} avg across ${d.sessions} sessions`);
+      lines.push(`  Evidence: ${d.avgScore.toFixed(2)} avg across ${d.sessions ?? '?'} sessions`);
       lines.push('  Status: pending');
+      lines.push(`  Proposed by: ${developer} (${today})`);
     }
     lines.push('');
   }
@@ -353,6 +356,7 @@ export function formatProposals(proposals) {
     for (const b of proposals.budgetChanges) {
       lines.push(`- ${b.route}: ${b.description}`);
       lines.push('  Status: pending');
+      lines.push(`  Proposed by: ${developer} (${today})`);
     }
     lines.push('');
   }
