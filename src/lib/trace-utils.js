@@ -8,8 +8,6 @@
  *   generateSessionSummary(opts)            → markdown string
  */
 
-const ANTI_PATTERN_RE = /\b([A-Z]{2,4}-\d{2,4})\b/g;
-
 /**
  * Default intent map. Users can extend this via route configs.
  * Ordered: first match wins.
@@ -94,12 +92,16 @@ function bashOutcome(response) {
 }
 
 /**
- * Extract and deduplicate rule IDs from text.
+ * Check which known rule IDs appear in text.
+ * Deterministic: checks exact ID string presence, not regex patterns.
+ *
+ * @param {string} text - Tool response text to scan
+ * @param {string[]} knownRuleIds - Rule IDs from the session manifest
+ * @returns {string[]} IDs that appear in the text
  */
-function extractRuleIds(text) {
-  if (!text) return [];
-  const matches = [...text.matchAll(ANTI_PATTERN_RE)].map(m => m[1]);
-  return [...new Set(matches)];
+export function extractReferencedRules(text, knownRuleIds) {
+  if (!text || !knownRuleIds || knownRuleIds.length === 0) return [];
+  return knownRuleIds.filter(id => text.includes(id));
 }
 
 /**
@@ -121,7 +123,7 @@ export function parseTraceEvent(input, projectDir = '') {
     input_summary: buildInputSummary(tool_name, tool_input, projectDir),
     output_size: responseStr.length,
     duration_ms: null,
-    referenced_context: extractRuleIds(responseStr),
+    referenced_context: [],
     files_touched: filePath ? [filePath] : [],
     outcome: tool_name === 'Bash' ? bashOutcome(responseStr) : null,
   };
@@ -243,4 +245,4 @@ export function generateSessionSummary({ sessionId, date, intent, traceEvents, i
   return lines.join('\n');
 }
 
-export { extractRuleIds, stripBase, buildInputSummary };
+export { stripBase, buildInputSummary };

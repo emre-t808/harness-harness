@@ -10,8 +10,14 @@ import path from 'path';
 import { resolvePaths } from './paths.js';
 
 // Thresholds
-const PROMOTE_THRESHOLD = 0.75;
-const DEMOTE_THRESHOLD = 0.10;
+// Phase 8: absolute constants are now fallbacks; primary decisions are Elo-anchored.
+const FALLBACK_PROMOTE_THRESHOLD = 0.75;
+const FALLBACK_DEMOTE_THRESHOLD = 0.10;
+const MIN_POPULATION_FOR_ELO_THRESHOLDS = 10;
+const MIN_SESSIONS_FOR_ELO_DECISION = 5;
+// Back-compat exports (kept for any external callers of the legacy names)
+const PROMOTE_THRESHOLD = FALLBACK_PROMOTE_THRESHOLD;
+const DEMOTE_THRESHOLD = FALLBACK_DEMOTE_THRESHOLD;
 const UTILIZATION_HIGH = 70;
 const UTILIZATION_LOW = 40;
 
@@ -29,7 +35,7 @@ export function parseSummary(content) {
   if (!tableMatch) return null;
 
   const scores = [];
-  const rowRe = /^\|\s*([A-Z]{2,4}-\d{2,4})\s*\|\s*([\d.]+)\s*\|\s*(.+?)\s*\|$/gm;
+  const rowRe = /^\|\s*(\S+)\s*\|\s*([\d.]+)\s*\|\s*(.+?)\s*\|$/gm;
   let match;
   while ((match = rowRe.exec(tableMatch[1])) !== null) {
     scores.push({ rule: match[1], score: parseFloat(match[2]), evidence: match[3].trim() });
@@ -101,11 +107,18 @@ function weightedAvg(totalWeightedScore, totalWeight) {
 export function aggregateScores(summaries) {
   const perRule = {};
   const perRoute = {};
+  const _perSessionScores = [];  // Phase 7: per-session detail for Elo
   const midpoint = Math.floor(summaries.length / 2);
 
   for (let i = 0; i < summaries.length; i++) {
     const { route, scores, slotUtilization } = summaries[i];
     const weight = i >= midpoint ? 2 : 1;
+
+    _perSessionScores.push(scores.map(s => ({
+      ruleId: s.rule,
+      evidence: s.evidence,
+      score: s.score,
+    })));
 
     if (!perRoute[route]) {
       perRoute[route] = { sessionCount: 0, ruleScores: {}, utilization: { totalUtil: 0, count: 0, totalWasteTokens: 0 } };
@@ -126,6 +139,7 @@ export function aggregateScores(summaries) {
           totalWeightedScore: 0, totalWeight: 0,
           sessionsInjected: 0, timesReferenced: 0,
           routeScores: {}, hasPrevented: false,
+          hasBehavioralCompliance: false,  // Phase 7
         };
       }
       perRule[rule].totalWeightedScore += score * weight;
@@ -133,6 +147,9 @@ export function aggregateScores(summaries) {
       perRule[rule].sessionsInjected++;
       if (score > 0) perRule[rule].timesReferenced++;
       if (evidence === 'prevented-mistake') perRule[rule].hasPrevented = true;
+      if (evidence === 'behavioral-compliance' || evidence === 'verified-compliance' || evidence === 'content-verified') {
+        perRule[rule].hasBehavioralCompliance = true;
+      }
 
       if (!perRule[rule].routeScores[route]) {
         perRule[rule].routeScores[route] = { totalWeightedScore: 0, totalWeight: 0 };
@@ -148,18 +165,50 @@ export function aggregateScores(summaries) {
     }
   }
 
-  return { perRule, perRoute };
+  return { perRule, perRoute, _perSessionScores };
 }
 
 // ---------------------------------------------------------------------------
 // Proposal generation
 // ---------------------------------------------------------------------------
 
-export function generateProposals(aggregated, allRoutes) {
+export function generateProposals(aggregated, allRoutes, propagationState = {}, ratingState = null) {
   const { perRule, perRoute } = aggregated;
   const promotions = [];
   const demotions = [];
   const budgetChanges = [];
+  const propagations = [];  // Phase 7
+
+  // Population stats from Elo ratings (if available)
+  let ratingMean = 1500;
+  let ratingStdDev = 0;
+  if (ratingState) {
+    try {
+      // Lazy import to avoid circular deps
+      // Using dynamic import pattern — but generateProposals is sync, so compute inline.
+      const ratings = Object.values(ratingState.rules || {})
+        .filter(entry => (entry.sessions_injected || 0) >= 3)
+        .map(entry => entry.rating);
+      if (ratings.length > 0) {
+        ratingMean = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+        const variance = ratings.reduce((sum, r) => sum + Math.pow(r - ratingMean, 2), 0) / ratings.length;
+        ratingStdDev = Math.sqrt(variance);
+      }
+    } catch { /* use defaults */ }
+  }
+
+  const PROPAGATION_RATING_THRESHOLD = ratingMean + ratingStdDev;
+  const PROPAGATION_MIN_SESSIONS = 10;
+  const PROPAGATION_WEEKS_REQUIRED = 2;
+
+  // Phase 8: Elo-anchored promote/demote thresholds (with small-pop fallback)
+  const popRatings = Object.values(ratingState?.rules || {})
+    .filter(e => (e.sessions_injected || 0) >= 3);
+  const useEloThresholds = popRatings.length >= MIN_POPULATION_FOR_ELO_THRESHOLDS && ratingStdDev > 0;
+  const eloPromoteRating = ratingMean + 0.5 * ratingStdDev;
+  const eloDemoteRating = ratingMean - 1.0 * ratingStdDev;
+
+  const newPropagationState = {};
 
   for (const [rule, data] of Object.entries(perRule)) {
     const avgScore = weightedAvg(data.totalWeightedScore, data.totalWeight);
@@ -167,20 +216,87 @@ export function generateProposals(aggregated, allRoutes) {
       route, avg: weightedAvg(rd.totalWeightedScore, rd.totalWeight),
     }));
 
-    if (routeAvgs.length >= 2 && routeAvgs.every(r => r.avg >= PROMOTE_THRESHOLD)) {
+    const ruleRatingEntry = ratingState?.rules?.[rule];
+    const ruleRating = ruleRatingEntry?.rating ?? 1500;
+    const ruleSessions = ruleRatingEntry?.sessions_injected ?? 0;
+
+    // Promote
+    const promoteEligible = useEloThresholds
+      ? (ruleRating >= eloPromoteRating && ruleSessions >= MIN_SESSIONS_FOR_ELO_DECISION)
+      : (routeAvgs.length >= 2 && routeAvgs.every(r => r.avg >= FALLBACK_PROMOTE_THRESHOLD));
+
+    if (promoteEligible) {
       promotions.push({
         rule, avgScore,
+        rating: useEloThresholds ? Math.round(ruleRating) : undefined,
+        threshold: useEloThresholds ? Math.round(eloPromoteRating) : FALLBACK_PROMOTE_THRESHOLD,
         routes: routeAvgs.map(r => `${r.route} (${r.avg.toFixed(2)})`).join(', '),
         sessions: data.sessionsInjected,
       });
     }
 
-    if (!data.hasPrevented) {
-      for (const { route, avg } of routeAvgs) {
-        if (avg < DEMOTE_THRESHOLD && data.sessionsInjected >= 3) {
-          demotions.push({ rule, route, avgScore: avg, sessions: data.sessionsInjected });
+    // Demote (safety exclusions: prevented-mistake + behavioral-compliance + content-verified)
+    if (!data.hasPrevented && !data.hasBehavioralCompliance) {
+      if (useEloThresholds) {
+        if (ruleRating < eloDemoteRating && ruleSessions >= MIN_SESSIONS_FOR_ELO_DECISION) {
+          for (const { route, avg } of routeAvgs) {
+            demotions.push({
+              rule, route, avgScore: avg,
+              rating: Math.round(ruleRating),
+              sessions: data.sessionsInjected,
+            });
+          }
+        }
+      } else {
+        for (const { route, avg } of routeAvgs) {
+          if (avg < FALLBACK_DEMOTE_THRESHOLD && data.sessionsInjected >= 3) {
+            demotions.push({ rule, route, avgScore: avg, sessions: data.sessionsInjected });
+          }
         }
       }
+    }
+
+    // Phase 7: propagation eligibility
+    const ratingEntry = ratingState?.rules?.[rule];
+    const currentRating = ratingEntry?.rating ?? 1500;
+    const sessionsInjected = ratingEntry?.sessions_injected ?? 0;
+
+    const ratingAboveThreshold = ratingStdDev > 0 && currentRating >= PROPAGATION_RATING_THRESHOLD;
+    const hasEnoughSessions = sessionsInjected >= PROPAGATION_MIN_SESSIONS;
+
+    const prevState = propagationState.rules?.[rule] || { weeks_above_threshold: 0 };
+    const weeksNow = ratingAboveThreshold
+      ? (prevState.weeks_above_threshold || 0) + 1
+      : Math.max(0, (prevState.weeks_above_threshold || 0) - 1);
+
+    newPropagationState[rule] = {
+      weeks_above_threshold: weeksNow,
+      last_rating: Math.round(currentRating),
+      last_score: avgScore,
+      last_routes: routeAvgs.map(r => r.route),
+    };
+
+    const eligibleByRating = ratingAboveThreshold && hasEnoughSessions && weeksNow >= PROPAGATION_WEEKS_REQUIRED;
+    const eligibleBySafety = data.hasPrevented;
+    const eligibleByFastTrack = ratingAboveThreshold && ratingStdDev > 0 &&
+      currentRating >= (ratingMean + 2 * ratingStdDev) && sessionsInjected >= 5;
+
+    if (eligibleByRating || eligibleBySafety || eligibleByFastTrack) {
+      const reason = eligibleBySafety ? 'safety-rule'
+        : eligibleByFastTrack ? 'fast-track-exceptional-rating'
+        : 'sustained-high-rating';
+
+      propagations.push({
+        rule,
+        avgScore,
+        rating: Math.round(currentRating),
+        pool_mean: Math.round(ratingMean),
+        pool_std_dev: Math.round(ratingStdDev),
+        routes: routeAvgs.map(r => r.route),
+        weeksAboveThreshold: weeksNow,
+        sessionsInjected,
+        reason,
+      });
     }
   }
 
@@ -194,7 +310,12 @@ export function generateProposals(aggregated, allRoutes) {
     }
   }
 
-  return { promotions, demotions, budgetChanges };
+  return {
+    promotions, demotions, budgetChanges, propagations,
+    propagationState: newPropagationState,
+    usedEloThresholds: useEloThresholds,
+    ratingPopulation: { mean: Math.round(ratingMean), std_dev: Math.round(ratingStdDev), count: popRatings.length },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +447,12 @@ export function formatProposals(proposals) {
   lines.push('## Proposed Adjustments');
   lines.push(`Generated: ${today}`);
   lines.push('Status: pending-review');
+  if (proposals.usedEloThresholds) {
+    const pop = proposals.ratingPopulation || {};
+    lines.push(`_Thresholds: Elo-anchored (promote ≥ mean + 0.5σ, demote < mean − σ; pool mean=${pop.mean}, σ=${pop.std_dev}, n=${pop.count})_`);
+  } else {
+    lines.push(`_Thresholds: absolute fallback (promote ≥ ${FALLBACK_PROMOTE_THRESHOLD}, demote < ${FALLBACK_DEMOTE_THRESHOLD}) — rating population < ${MIN_POPULATION_FOR_ELO_THRESHOLDS} rules_`);
+  }
   lines.push('');
 
   if (proposals.promotions.length > 0) {
@@ -361,7 +488,23 @@ export function formatProposals(proposals) {
     lines.push('');
   }
 
-  if (!proposals.promotions.length && !proposals.demotions.length && !proposals.budgetChanges.length) {
+  if (proposals.propagations && proposals.propagations.length > 0) {
+    lines.push('### Propagation Suggestions');
+    lines.push('');
+    for (const p of proposals.propagations) {
+      lines.push(`- ${p.rule} → propagate to repos with matching routes`);
+      lines.push(`  Rating: ${p.rating} (pool mean: ${p.pool_mean}, σ: ${p.pool_std_dev})`);
+      lines.push(`  Evidence: ${p.avgScore.toFixed(2)} avg across ${p.sessionsInjected} sessions`);
+      lines.push(`  Weeks above threshold: ${p.weeksAboveThreshold}`);
+      lines.push(`  Reason: ${p.reason}`);
+      lines.push(`  Routes: ${(p.routes || []).join(', ')}`);
+      lines.push('  Status: pending');
+      lines.push(`  Proposed by: ${developer} (${today})`);
+      lines.push('');
+    }
+  }
+
+  if (!proposals.promotions.length && !proposals.demotions.length && !proposals.budgetChanges.length && !(proposals.propagations && proposals.propagations.length)) {
     lines.push('No proposals generated — insufficient data or all scores within thresholds.');
     lines.push('');
   }

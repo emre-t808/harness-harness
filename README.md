@@ -245,7 +245,7 @@ This tells the assembler which rule IDs correspond to which files, enabling accu
 No. The assembler runs in <100ms. Trace capture is async and adds <20ms per tool call. Session summaries run at session end only.
 
 **Does this read my code or messages?**
-Traces capture tool names, file paths, and output sizes — not file contents or message text. Summaries analyze which rules were referenced, not what you discussed.
+Traces capture tool names, file paths, output sizes, and (as of v0.4.0) the first 2KB of content written by `Edit` / `Write` tool calls (base64-encoded, stored as `response_snippet`). The snippet powers semantic verification of behavioral rules via the `content_includes` signal. If you prefer the v0.3.x behavior, set `trace.captureResponseSnippets: false` in `.harness/config.json`. Summaries still analyze which rules were referenced, not what you discussed.
 
 **Can I use this with other AI coding tools?**
 Currently designed for Claude Code's hook system. Support for other coding agents is planned. The core libraries (intent classification, effectiveness scoring, budget assembly) are generic and could be adapted for any tool with hook/plugin support.

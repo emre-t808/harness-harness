@@ -30,7 +30,7 @@ export function parseOverrides(content, forceMode = false) {
     if (line.startsWith('## ') || line.startsWith('### ')) { currentSection = ''; continue; }
 
     if (currentSection === 'promotions' && line.startsWith('- ')) {
-      const ruleMatch = line.match(/^- ([A-Z]{2,4}-\d{2,4}) → Identity/);
+      const ruleMatch = line.match(/^- (\S+) → Identity/);
       if (ruleMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {
@@ -42,7 +42,7 @@ export function parseOverrides(content, forceMode = false) {
     }
 
     if (currentSection === 'demotions' && line.startsWith('- ')) {
-      const demoteMatch = line.match(/^- ([A-Z]{2,4}-\d{2,4}) → Skip in (.+)/);
+      const demoteMatch = line.match(/^- (\S+) → Skip in (.+)/);
       if (demoteMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {

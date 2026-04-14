@@ -48,6 +48,17 @@ export function resolvePaths(projectDir) {
     configFile: join(harnessDir, 'config.json'),
     claudeSettingsFile: join(claudeDir, 'settings.json'),
 
+    // Rule registry (Phase 6)
+    rulesFile: join(harnessDir, 'rules.yaml'),
+    localRulesFile: join(localDir, 'rules.yaml'),
+
+    // File activity (Phase 6)
+    fileActivityFile: join(harnessDir, 'memory', 'file-activity.yaml'),
+
+    // Phase 7
+    propagationStateFile: join(harnessDir, 'memory', 'propagation-state.json'),
+    ratingStateFile: join(harnessDir, 'memory', 'rating-state.json'),
+
     // Local (per-developer, gitignored)
     localDir,
     localRoutesDir: join(localDir, 'routes'),

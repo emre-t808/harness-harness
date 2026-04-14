@@ -150,15 +150,15 @@ describe('runAggregation', () => {
   beforeEach(() => { tmpDir = createTempDir(); });
   afterEach(() => { cleanupDir(tmpDir); });
 
-  it('returns not-ran when no summaries exist', () => {
+  it('returns not-ran when no summaries exist', async () => {
     setupProject(tmpDir);
     const paths = resolvePaths(tmpDir);
-    const result = runAggregation(paths);
+    const result = await runAggregation(paths);
     assert.equal(result.ran, false);
     assert.equal(result.reason, 'no-summaries');
   });
 
-  it('returns not-ran when summaries have no effectiveness data', () => {
+  it('returns not-ran when summaries have no effectiveness data', async () => {
     const { tracesDir } = setupProject(tmpDir);
     const today = new Date().toISOString().slice(0, 10);
     const dir = path.join(tracesDir, today);
@@ -166,12 +166,12 @@ describe('runAggregation', () => {
     fs.writeFileSync(path.join(dir, 'abc-summary.md'), '## Session abc\n\n**Route:** general\n', 'utf8');
 
     const paths = resolvePaths(tmpDir);
-    const result = runAggregation(paths);
+    const result = await runAggregation(paths);
     assert.equal(result.ran, false);
     assert.equal(result.reason, 'no-effectiveness-data');
   });
 
-  it('runs full pipeline with valid summaries', () => {
+  it('runs full pipeline with valid summaries', async () => {
     const { tracesDir } = setupProject(tmpDir);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -185,7 +185,7 @@ describe('runAggregation', () => {
     ]);
 
     const paths = resolvePaths(tmpDir);
-    const result = runAggregation(paths);
+    const result = await runAggregation(paths);
 
     assert.equal(result.ran, true);
     assert.equal(result.sessionsAnalyzed, 2);
@@ -205,7 +205,7 @@ describe('runAggregation', () => {
     assert.ok(effContent.includes('CS-001'));
   });
 
-  it('appends proposals to existing overrides file', () => {
+  it('appends proposals to existing overrides file', async () => {
     const { tracesDir } = setupProject(tmpDir);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -220,11 +220,68 @@ describe('runAggregation', () => {
     fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
     fs.writeFileSync(targetOverFile, '## Existing Proposals\n\n- Some old proposal\n', 'utf8');
 
-    runAggregation(paths);
+    await runAggregation(paths);
 
     const content = fs.readFileSync(targetOverFile, 'utf8');
     assert.ok(content.includes('Existing Proposals'));
     assert.ok(content.includes('Proposed Adjustments'));
+  });
+});
+
+// -------------------------------------------------------------------------
+// runAggregation rule-rating integration (Phase 8 audit gap)
+// -------------------------------------------------------------------------
+
+describe('runAggregation rule-rating integration', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = createTempDir(); });
+  afterEach(() => { cleanupDir(tmpDir); });
+
+  it('writes rating-state.json after aggregation', async () => {
+    const { tracesDir } = setupProject(tmpDir);
+    const today = new Date().toISOString().slice(0, 10);
+    writeSummary(tracesDir, today, 'sess1', 'coding-backend', [
+      { rule: 'CS-001', score: 1.0, evidence: 'referenced' },
+      { rule: 'CS-002', score: 0.0, evidence: 'ignored' },
+    ]);
+
+    const paths = resolvePaths(tmpDir);
+    await runAggregation(paths);
+
+    assert.ok(fs.existsSync(paths.ratingStateFile));
+    const state = JSON.parse(fs.readFileSync(paths.ratingStateFile, 'utf8'));
+    assert.ok(state.rules);
+    assert.ok(state.rules['CS-001']);
+    // Winner should be rated above the starting rating of 1500
+    assert.ok(state.rules['CS-001'].rating > 1500);
+    // Loser below
+    assert.ok(state.rules['CS-002'].rating < 1500);
+  });
+
+  it('persists ratings across multiple runs', async () => {
+    const { tracesDir } = setupProject(tmpDir);
+    const paths = resolvePaths(tmpDir);
+    const today = new Date().toISOString().slice(0, 10);
+
+    writeSummary(tracesDir, today, 'sess1', 'coding-backend', [
+      { rule: 'CS-001', score: 1.0, evidence: 'referenced' },
+      { rule: 'CS-002', score: 0.0, evidence: 'ignored' },
+    ]);
+    await runAggregation(paths);
+    const firstState = JSON.parse(fs.readFileSync(paths.ratingStateFile, 'utf8'));
+    const firstRating = firstState.rules['CS-001'].rating;
+    const firstSessions = firstState.rules['CS-001'].sessions_injected;
+
+    writeSummary(tracesDir, today, 'sess2', 'coding-backend', [
+      { rule: 'CS-001', score: 1.0, evidence: 'referenced' },
+      { rule: 'CS-002', score: 0.0, evidence: 'ignored' },
+    ]);
+    await runAggregation(paths);
+    const secondState = JSON.parse(fs.readFileSync(paths.ratingStateFile, 'utf8'));
+    // session count should have grown, not reset to zero
+    assert.ok(secondState.rules['CS-001'].sessions_injected >= firstSessions);
+    // Rating should not regress on another win
+    assert.ok(secondState.rules['CS-001'].rating >= firstRating);
   });
 });
 

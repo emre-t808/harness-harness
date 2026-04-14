@@ -22,6 +22,8 @@ import {
 } from './weekly-analysis.js';
 import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
 import { withFileLock } from './file-lock.js';
+import { updateFederatedIndex } from './federated-index.js';
+import { aggregateFileActivity, writeFileActivity } from './activity.js';
 
 const AGGREGATION_INTERVAL_HOURS = 24;
 const ANALYSIS_WINDOW_DAYS = 7;
@@ -65,7 +67,7 @@ export function writeNotification(notificationsFile, proposalCount, sessionCount
  * Run the full aggregation + proposal + cleanup pipeline.
  * Called only when the check determines it's due.
  */
-export function runAggregation(paths) {
+export async function runAggregation(paths) {
   const summaryPaths = findRecentSummaries(ANALYSIS_WINDOW_DAYS, paths);
   if (summaryPaths.length === 0) return { ran: false, reason: 'no-summaries' };
 
@@ -79,7 +81,37 @@ export function runAggregation(paths) {
   // Aggregate
   const aggregated = aggregateScores(parsed);
   const allRoutes = [...new Set(parsed.map(p => p.route))].sort();
-  const proposals = generateProposals(aggregated, allRoutes);
+
+  // Phase 7: Load previous propagation state
+  let propagationState = {};
+  if (fs.existsSync(paths.propagationStateFile)) {
+    try {
+      propagationState = JSON.parse(fs.readFileSync(paths.propagationStateFile, 'utf8'));
+    } catch { /* start fresh */ }
+  }
+
+  // Phase 7: Update Elo ratings BEFORE generating proposals
+  let ratingState = { rules: {} };
+  try {
+    const { updateRatingsFromAggregation, loadRatingState, saveRatingState } = await import('./rule-rating.js');
+    const priorRatingState = loadRatingState(paths);
+    ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
+    saveRatingState(paths, ratingState);
+  } catch { /* non-fatal */ }
+
+  const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState);
+
+  // Persist updated propagation state
+  try {
+    if (proposals.propagationState) {
+      const newState = {
+        last_analysis: new Date().toISOString().slice(0, 10),
+        rules: proposals.propagationState,
+      };
+      fs.mkdirSync(path.dirname(paths.propagationStateFile), { recursive: true });
+      fs.writeFileSync(paths.propagationStateFile, JSON.stringify(newState, null, 2), 'utf8');
+    }
+  } catch { /* non-fatal */ }
 
   // Format reports
   const previousUtil = loadPreviousUtilization(paths);
@@ -125,6 +157,14 @@ export function runAggregation(paths) {
     }
   }
 
+  // Phase 6: File activity aggregation
+  try {
+    const activity = aggregateFileActivity(paths.tracesDir, ANALYSIS_WINDOW_DAYS);
+    if (activity.length > 0) {
+      writeFileActivity(paths.fileActivityFile, activity, ANALYSIS_WINDOW_DAYS);
+    }
+  } catch { /* non-fatal */ }
+
   // Trace cleanup
   const cleanupResult = cleanupTraceFiles(paths.tracesDir, CLEANUP_RETENTION_DAYS);
   trimIndex(paths.traceIndex, INDEX_MAX_LINES);
@@ -133,6 +173,44 @@ export function runAggregation(paths) {
   const totalProposals = proposals.promotions.length + proposals.demotions.length + proposals.budgetChanges.length;
   writeNotification(paths.localNotificationsFile || paths.notificationsFile, totalProposals, parsed.length);
 
+  // Piggyback: update federated index (best-effort)
+  try {
+    await updateFederatedIndex(paths);
+  } catch { /* non-fatal */ }
+
+  // Phase 7: Source staleness check
+  let staleSources = 0;
+  try {
+    const { loadRuleRegistry } = await import('./rule-registry.js');
+    const { computeSourceHash } = await import('./ingestion/parsers.js');
+    const registry = loadRuleRegistry(paths);
+
+    const checkedFiles = new Set();
+    for (const rule of registry.values()) {
+      if (!rule.source || !rule.source_hash) continue;
+      if (checkedFiles.has(rule.source)) continue;
+      checkedFiles.add(rule.source);
+
+      const currentHash = computeSourceHash(rule.source);
+      if (currentHash && currentHash !== rule.source_hash) {
+        staleSources++;
+      }
+    }
+
+    if (staleSources > 0) {
+      const msg = `${staleSources} source file(s) modified since last ingest. Run: harness-harness rules ingest --update`;
+      try {
+        const notifFile = paths.localNotificationsFile || paths.notificationsFile;
+        fs.mkdirSync(path.dirname(notifFile), { recursive: true });
+        fs.appendFileSync(
+          notifFile,
+          `- [${new Date().toISOString().slice(0, 10)}] ${msg}\n`,
+          'utf8'
+        );
+      } catch { /* non-fatal */ }
+    }
+  } catch { /* non-fatal */ }
+
   return {
     ran: true,
     sessionsAnalyzed: parsed.length,
@@ -140,6 +218,7 @@ export function runAggregation(paths) {
     proposals: totalProposals,
     reordered: reorderedCount,
     tracesCleaned: cleanupResult.deletedFiles,
+    staleSources,
   };
 }
 
@@ -161,7 +240,7 @@ export async function runDailyCheckIfDue(projectDir) {
     return { ran: false, reason: 'not-due', hoursSince: Math.round(hoursSince) };
   }
 
-  return runAggregation(paths);
+  return await runAggregation(paths);
 }
 
 export { AGGREGATION_INTERVAL_HOURS, ANALYSIS_WINDOW_DAYS, CLEANUP_RETENTION_DAYS };

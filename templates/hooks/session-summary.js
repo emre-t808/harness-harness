@@ -81,7 +81,14 @@ function scoreReferencedContext(events, rules) {
   return result;
 }
 
-function collectRules(events) {
+function collectRules(events, manifest) {
+  if (manifest && Array.isArray(manifest.rules_injected)) {
+    const rules = manifest.rules_injected;
+    if (rules.length > 0 && typeof rules[0] === 'object') {
+      return rules.map(r => r.id);
+    }
+    return [...rules];
+  }
   const refs = new Set();
   for (const evt of events) {
     for (const r of (evt.referenced_context || [])) refs.add(r);
@@ -101,8 +108,9 @@ function computeSlotUtilization(manifest, events) {
     let referenced = 0;
     if (name === 'identity') referenced = injected;
     else if (name === 'route_context') {
-      const rules = manifest.rules_injected || [];
-      referenced = Math.round(injected * (rules.filter(r => allRefs.has(r)).length / Math.max(1, rules.length)));
+      const rawRules = manifest.rules_injected || [];
+      const ruleIds = rawRules.map(r => typeof r === 'object' ? r.id : r);
+      referenced = Math.round(injected * (ruleIds.filter(r => allRefs.has(r)).length / Math.max(1, ruleIds.length)));
     } else referenced = Math.round(injected * 0.5);
     totalReferenced += referenced;
     const util = injected > 0 ? Math.round((referenced / injected) * 100) : 0;
@@ -152,7 +160,14 @@ async function main() {
 
   const events = readTracefile(traceFile);
   const intent = deriveIntent(events);
-  const rules = collectRules(events);
+
+  let manifest = null;
+  const manifestFile = path.join(TRACES_DIR, date, `${sessionId}-manifest.json`);
+  if (fs.existsSync(manifestFile)) {
+    try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch { /* skip */ }
+  }
+
+  const rules = collectRules(events, manifest);
   const scores = scoreReferencedContext(events, rules);
 
   const uniqueFiles = [...new Set(events.flatMap(e => e.files_touched || []))].sort();
@@ -191,13 +206,9 @@ async function main() {
     summary += `\n### Session State\n\n- Objective: ${objective}\n`;
   }
 
-  // Append slot utilization from manifest
-  const manifestFile = path.join(TRACES_DIR, date, `${sessionId}-manifest.json`);
-  if (fs.existsSync(manifestFile)) {
-    try {
-      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-      summary += computeSlotUtilization(manifest, events);
-    } catch { /* skip */ }
+  // Append slot utilization from manifest (loaded earlier)
+  if (manifest) {
+    summary += computeSlotUtilization(manifest, events);
   }
 
   // Write summary

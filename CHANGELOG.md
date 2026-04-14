@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 (2026-04-14)
+
+### Features
+
+- **Semantic content verification** — New `content_includes` behavioral signal. Rules can verify that agent diffs contain required constructs (e.g., `content_includes: "\\btimingSafeEqual\\b"`). Matches produce a new `content-verified` evidence type scoring 1.0 (or 1.75 when combined with an explicit reference).
+- **Rule pruning / write-back** — New `harness-harness rules prune` command. Identifies underrated and ghost rules, writes a review proposal, and on `--apply` rewrites the source files (with backups) and removes entries from `rules.yaml`. Never silent: two-step propose → apply flow.
+- **Elo-unified promote/demote** — `weekly-analysis.js` now uses population-anchored thresholds (`mean ± σ`) derived from the Elo rating state. Falls back to the absolute `0.75` / `0.10` constants only when the rated population is under 10 rules. `formatProposals()` reports which threshold system was used.
+- **Integration test coverage** — End-to-end tests for `rules ingest` (including nested CLAUDE.md ID uniqueness), propagation state roundtrip, daily-check → rule-rating persistence, and `rules prune` propose + apply.
+
+### Privacy change
+
+- Traces now capture the first 2KB of `Edit` / `Write` content as a base64-encoded `response_snippet` field. This enables `content_includes` verification. Users who want the v0.3.x behavior set `trace.captureResponseSnippets: false` in `.harness/config.json`.
+
+### Migration
+
+Run `harness-harness init --force` to regenerate hooks with the extended trace schema.
+
 ## 0.2.1 (2026-04-07)
 
 ### Bug Fixes — Multi-Repo & Team Support

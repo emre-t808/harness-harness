@@ -15,6 +15,7 @@
  */
 
 import { resolve } from 'path';
+import { existsSync, statSync } from 'fs';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -31,12 +32,17 @@ function printHelp() {
 
   Commands:
     init              Scaffold harness into your project
-    health            Show effectiveness dashboard
+    health            Show effectiveness dashboard (--all for cross-repo)
     analyze           Run weekly effectiveness analysis
     apply             Apply approved route overrides
     cleanup           Clean up expired trace files
     routes list       List configured routes
     routes create     Create a new custom route
+    register          Register repo(s) in federated index
+    index             Refresh federated index from registered repos
+    rules             List, search, add, or migrate rules (registry)
+    share             Import a rule from another repo
+    activity          Show agent file activity heatmap
 
   Options:
     --dry-run         Preview changes without writing
@@ -64,8 +70,14 @@ async function main() {
   if (flags.includes('--project')) {
     projectDir = resolve(flags[flags.indexOf('--project') + 1]);
   } else {
-    // Check for positional path argument (first flag that isn't a --flag)
-    const positionalPath = flags.find(f => !f.startsWith('-'));
+    // Positional path detection — skip flags[0] (that's a subcommand or plain arg),
+    // and require an existing directory to avoid collisions with subcommand names.
+    const positionalPath = flags.slice(1).find(f => {
+      if (f.startsWith('-')) return false;
+      const abs = resolve(f);
+      try { return existsSync(abs) && statSync(abs).isDirectory(); }
+      catch { return false; }
+    });
     projectDir = positionalPath ? resolve(positionalPath) : PROJECT_DIR;
   }
 
@@ -110,6 +122,31 @@ async function main() {
     case 'routes': {
       const { routes } = await import('../src/commands/routes.js');
       await routes(projectDir, flags);
+      break;
+    }
+    case 'register': {
+      const { register } = await import('../src/commands/register.js');
+      await register(projectDir, flags);
+      break;
+    }
+    case 'index': {
+      const { index } = await import('../src/commands/index.js');
+      await index(projectDir, flags);
+      break;
+    }
+    case 'rules': {
+      const { rules } = await import('../src/commands/rules.js');
+      await rules(projectDir, flags);
+      break;
+    }
+    case 'share': {
+      const { share } = await import('../src/commands/share.js');
+      await share(projectDir, flags);
+      break;
+    }
+    case 'activity': {
+      const { activity } = await import('../src/commands/activity.js');
+      await activity(projectDir, flags);
       break;
     }
     default:

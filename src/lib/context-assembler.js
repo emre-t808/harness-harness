@@ -19,8 +19,12 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { execSync } from 'child_process';
 import { classifyIntent } from './trace-utils.js';
 import { resolvePaths } from './paths.js';
-import { join } from 'path';
+import { join, resolve as resolvePath } from 'path';
 import { mergeRouteConfigs, mergeEffectivenessScores, mergeProjectConfigs } from './config-merge.js';
+import { parseRulesFromSection } from './rule-parser.js';
+import { loadRuleRegistry, resolveRule } from './rule-registry.js';
+import { readTraceIndex, globalConfigDir } from './federated-index.js';
+import { getDismissedRuleIds } from './dismissed-rules.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -131,7 +135,7 @@ function loadScoresFromFile(filePath) {
   if (!filePath || !existsSync(filePath)) return {};
   const content = readFileSync(filePath, 'utf8');
   const scores = {};
-  const rowRe = /^\|\s*([A-Z]{2,4}-\d{2,4})\s*\|[^|]*\|[^|]*\|\s*([\d.]+)\s*\|/gm;
+  const rowRe = /^\|\s*(\S+)\s*\|[^|]*\|[^|]*\|\s*([\d.]+)\s*\|/gm;
   let match;
   while ((match = rowRe.exec(content)) !== null) {
     scores[match[1]] = parseFloat(match[2]);
@@ -340,6 +344,76 @@ function extractSectionContent(section) {
 }
 
 /**
+ * Phase 6: Find relevant rules from other repos for the current intent.
+ * Budget-free, threshold-gated, dismissable.
+ */
+function buildCrossRepoRules(intent, localRules, projectDir) {
+  let repos;
+  try {
+    repos = readTraceIndex();
+  } catch {
+    return '';
+  }
+
+  if (!repos || repos.length === 0) return '';
+
+  const localRuleIds = new Set(localRules.keys());
+  const localHashes = new Set([...localRules.values()].map(r => r.hash).filter(Boolean));
+  const resolvedProjectDir = resolvePath(projectDir);
+
+  let dismissedIds;
+  try {
+    dismissedIds = getDismissedRuleIds();
+  } catch {
+    dismissedIds = new Set();
+  }
+
+  const candidates = [];
+
+  for (const repo of repos) {
+    if (repo.path === resolvedProjectDir) continue;
+
+    const rules = repo.rules_summary || [];
+    for (const rule of rules) {
+      if (!rule.score || rule.score <= 0.75) continue;
+      if (localRuleIds.has(rule.id)) continue;
+      if (rule.hash && localHashes.has(rule.hash)) continue;
+      if (dismissedIds.has(rule.id)) continue;
+
+      candidates.push({
+        repo: repo.name,
+        id: rule.id,
+        score: rule.score,
+        text: rule.text || rule.id,
+        tags: rule.tags || [],
+      });
+    }
+  }
+
+  if (candidates.length === 0) return '';
+
+  candidates.sort((a, b) => b.score - a.score);
+  const top = candidates.slice(0, 5);
+
+  const lines = [
+    '<cross-repo-rules>',
+    'Rules from other repos that score well for this intent:',
+    '',
+  ];
+
+  for (const c of top) {
+    const tags = c.tags.length > 0 ? ` [${c.tags.join(', ')}]` : '';
+    lines.push(`  ${c.repo} / ${c.id} (${c.score}): "${c.text}"${tags}`);
+  }
+
+  lines.push('');
+  lines.push('These are suggestions, not injected context. To import: /hh-share <rule-id>');
+  lines.push('</cross-repo-rules>');
+
+  return lines.join('\n');
+}
+
+/**
  * Assemble the full context block.
  * @param {string} intent
  * @param {object} route - Parsed route config
@@ -364,7 +438,7 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
     working_memory: { tokens: 0, files: [] },
     trace_insights: { tokens: 0, files: [] },
   };
-  const rulesInjected = new Set();
+  const rulesInjected = new Map();
 
   // --- Slot 1: Identity ---
   let identity = route.sections['Identity']
@@ -385,11 +459,57 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
     : '';
 
   if (routeSection) {
-    routeRules = routeSection;
     routeContextFiles.push('route-config (inline rules)');
 
-    const inlineRuleIds = routeSection.match(/\b[A-Z]{2,4}-\d{2,4}\b/g) || [];
-    for (const id of inlineRuleIds) rulesInjected.add(id);
+    const routeFilename = intent.replace(/:/g, '-') + '.md';
+    const parsedRules = parseRulesFromSection(routeSection, routeFilename);
+    for (const rule of parsedRules) rulesInjected.set(rule.id, rule);
+
+    // Phase 6: Resolve rules against registry, enriching with metadata
+    try {
+      const registry = loadRuleRegistry(paths);
+      if (registry.size > 0) {
+        for (const [id, rule] of rulesInjected) {
+          const registryRule = resolveRule(id, registry);
+          if (registryRule) {
+            rulesInjected.set(id, {
+              ...rule,
+              ...registryRule,
+              id: rule.id,
+              source: rule.source,
+              origin: 'registry',
+            });
+          }
+        }
+
+        // Also add registry rules assigned to this route but not in Must Load
+        const intentNormalized = intent.replace(/:/g, '-');
+        for (const [id, registryRule] of registry) {
+          if (rulesInjected.has(id)) continue;
+          const assignedRoutes = registryRule.routes || [];
+          if (assignedRoutes.includes(intent) || assignedRoutes.includes(intentNormalized)) {
+            rulesInjected.set(id, {
+              ...registryRule,
+              id,
+              source: 'rules.yaml (route-assigned)',
+              origin: 'registry',
+            });
+          }
+        }
+      }
+    } catch { /* registry optional */ }
+
+    const wrappedLines = [];
+    for (const line of routeSection.split('\n')) {
+      const trimmed = line.replace(/^-\s*/, '').trim();
+      const matchingRule = parsedRules.find(r => r.text === trimmed || line.includes(r.id));
+      if (matchingRule && line.startsWith('- ')) {
+        wrappedLines.push(`<rule id="${matchingRule.id}" hash="${matchingRule.hash}">${matchingRule.text}</rule>`);
+      } else {
+        wrappedLines.push(line);
+      }
+    }
+    routeRules = wrappedLines.join('\n');
 
     const budgetPaths = extractLoadIfBudgetPaths(routeSection);
     if (budgetPaths.length > 0) {
@@ -432,6 +552,15 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
   const tokensUsed = estimateTokens(allContent);
   const budgetPercent = Math.round((tokensUsed / TOTAL_BUDGET_TOKENS) * 100);
 
+  // Phase 6: Build cross-repo rules suggestions (budget-free)
+  const crossRepoBlock = buildCrossRepoRules(intent, rulesInjected, paths.projectDir);
+  const surfacedCrossRepoIds = [];
+  if (crossRepoBlock) {
+    for (const match of crossRepoBlock.matchAll(/^\s{2}\S+ \/ (\S+) \(/gm)) {
+      surfacedCrossRepoIds.push(match[1]);
+    }
+  }
+
   lastManifest = {
     session: sessionId,
     turn: null,
@@ -440,7 +569,8 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
     slots: manifestSlots,
     total_tokens_injected: tokensUsed,
     budget_used_percent: budgetPercent,
-    rules_injected: [...rulesInjected].sort(),
+    rules_injected: [...rulesInjected.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    cross_repo_rules_surfaced: surfacedCrossRepoIds,
   };
 
   // --- Output ---
@@ -462,6 +592,13 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
   parts.push('<trace-insights>');
   parts.push(traceInsights);
   parts.push('</trace-insights>');
+
+  // Phase 6: cross-repo rule suggestions (budget-free)
+  if (crossRepoBlock) {
+    parts.push('');
+    parts.push(crossRepoBlock);
+  }
+
   parts.push('');
   parts.push('<meta>');
   parts.push('If this context does not match your task, check your route configs in .harness/routes/');
@@ -522,7 +659,14 @@ export async function main(projectDir) {
       const date = new Date().toISOString().slice(0, 10);
       const manifestDir = paths.manifestDir(date);
       mkdirSync(manifestDir, { recursive: true });
-      writeFileSync(`${manifestDir}/${manifest.session}-manifest.json`, JSON.stringify(manifest, null, 2));
+      const manifestPath = `${manifestDir}/${manifest.session}-manifest.json`;
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+      // Write pointer so trace-capture hook can find the current manifest
+      const cacheDir = process.env.XDG_RUNTIME_DIR
+        || join(process.env.HOME || '/tmp', '.cache', 'harness-harness');
+      try { mkdirSync(cacheDir, { recursive: true }); } catch { /* exists */ }
+      writeFileSync(join(cacheDir, 'current-manifest-path'), manifestPath);
     } catch { /* non-fatal */ }
   }
 

@@ -38,6 +38,16 @@ const ALL_HOOKS = [
   { src: 'session-end.sh', dest: 'hh-session-end.sh', group: 'trace' },
 ];
 
+const SLASH_COMMANDS = [
+  'hh-health.md',
+  'hh-analyze.md',
+  'hh-apply.md',
+  'hh-routes.md',
+  'hh-rules.md',
+  'hh-share.md',
+  'hh-activity.md',
+];
+
 export async function init(projectDir, flags) {
   const force = flags.includes('--force');
   const mergeMode = flags.includes('--merge');
@@ -143,6 +153,22 @@ export async function init(projectDir, flags) {
     }
   }
   console.log(`  Hooks: ${hooksToInstall.length} installed to .claude/hooks/`);
+
+  // 6b. Install slash commands (don't overwrite existing)
+  const commandsDir = path.join(paths.claudeDir, 'commands');
+  fs.mkdirSync(commandsDir, { recursive: true });
+  let commandsCopied = 0;
+  for (const cmd of SLASH_COMMANDS) {
+    const dest = path.join(commandsDir, cmd);
+    if (!fs.existsSync(dest)) {
+      const srcPath = path.join(TEMPLATES_DIR, 'commands', cmd);
+      if (fs.existsSync(srcPath)) {
+        fs.copyFileSync(srcPath, dest);
+        commandsCopied++;
+      }
+    }
+  }
+  console.log(`  Commands: ${commandsCopied} slash commands installed to .claude/commands/`);
 
   // 7. Install assembler (only in full/merge/replace mode)
   if (!traceOnly) {
