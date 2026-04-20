@@ -1,10 +1,11 @@
 /**
- * health command — Show effectiveness dashboard
+ * health command — Show effectiveness dashboard with governance state
  */
 
 import fs from 'fs';
 import { resolvePaths } from '../lib/paths.js';
-import { findRecentSummaries, parseSummary, aggregateScores, computeTrend, loadPreviousUtilization } from '../lib/weekly-analysis.js';
+import { findRecentSummaries, parseSummary, aggregateScores, loadPreviousUtilization } from '../lib/weekly-analysis.js';
+import { loadGovernance, loadCooldownQueue } from '../lib/daily-check.js';
 
 export async function health(projectDir, flags) {
   const paths = resolvePaths(projectDir);
@@ -18,6 +19,11 @@ export async function health(projectDir, flags) {
     console.log('  Not initialized. Run: harness-harness init');
     return;
   }
+
+  // Governance mode
+  const governance = loadGovernance(paths);
+  console.log(`  Governance: ${governance.mode} (cooldown: ${governance.cooldownHours}h)`);
+  console.log('');
 
   // Show effectiveness scores
   if (fs.existsSync(paths.effectivenessFile)) {
@@ -42,7 +48,6 @@ export async function health(projectDir, flags) {
     if (parsed.length > 0) {
       const aggregated = aggregateScores(parsed);
       const allRoutes = [...new Set(parsed.map(p => p.route))];
-      const previousUtil = loadPreviousUtilization(paths);
 
       console.log(`  Routes active: ${allRoutes.join(', ')}`);
       console.log('');
@@ -77,6 +82,18 @@ export async function health(projectDir, flags) {
     }
   }
 
+  // Cooldown queue
+  const queue = loadCooldownQueue(paths);
+  if (queue.length > 0) {
+    console.log(`  In cooldown (auto-applies after ${governance.cooldownHours}h):`);
+    for (const e of queue) {
+      const hours = Math.max(0, Math.round((new Date(e.appliesAt) - Date.now()) / 3600000));
+      console.log(`    ${e.rule}: ${hours}h remaining (score: ${e.avgScore.toFixed(2)}, ${e.sessions} sessions)`);
+    }
+    console.log('  Veto: harness-harness veto <RULE-ID>');
+    console.log('');
+  }
+
   // Show pending proposals
   if (fs.existsSync(paths.overridesFile)) {
     const content = fs.readFileSync(paths.overridesFile, 'utf8');
@@ -87,6 +104,19 @@ export async function health(projectDir, flags) {
       console.log(`  Apply:  harness-harness apply`);
     } else {
       console.log('  No pending proposals.');
+    }
+  }
+
+  // Recent auto-applied changes
+  if (fs.existsSync(paths.changelogFile)) {
+    const content = fs.readFileSync(paths.changelogFile, 'utf8');
+    const recent = content.split('\n').filter(l => l.startsWith('- ')).slice(-5);
+    if (recent.length > 0) {
+      console.log('');
+      console.log('  Recent auto-applied changes:');
+      for (const r of recent) {
+        console.log(`  ${r}`);
+      }
     }
   }
 

@@ -6,6 +6,7 @@
  */
 
 import { join } from 'path';
+import { homedir } from 'os';
 
 /**
  * Build a paths object for a given project directory.
@@ -13,6 +14,8 @@ import { join } from 'path';
  * @returns {object} All harness paths
  */
 export function resolvePaths(projectDir) {
+  // Org-level config: shared across all repos on this machine
+  const orgConfigDir = join(homedir(), '.config', 'harness-harness');
   const harnessDir = join(projectDir, '.harness');
   const claudeDir = join(projectDir, '.claude');
   const localDir = join(harnessDir, 'local');
@@ -34,6 +37,8 @@ export function resolvePaths(projectDir) {
     effectivenessFile: join(harnessDir, 'memory', 'harness-effectiveness.md'),
     overridesFile: join(harnessDir, 'memory', 'route-overrides.md'),
     notificationsFile: join(harnessDir, 'memory', 'notifications.md'),
+    changelogFile: join(harnessDir, 'memory', 'changelog.md'),
+    cooldownFile: join(harnessDir, 'memory', 'cooldown-queue.json'),
     tracePatternsFile: join(harnessDir, 'memory', 'trace-patterns.md'),
     workStatusFile: join(harnessDir, 'memory', 'work-status.md'),
 
@@ -57,6 +62,11 @@ export function resolvePaths(projectDir) {
     localEffectivenessFile: join(localDir, 'memory', 'harness-effectiveness.md'),
     localOverridesFile: join(localDir, 'memory', 'route-overrides.md'),
     localNotificationsFile: join(localDir, 'memory', 'notifications.md'),
+
+    // Org-level rules and config (shared across all repos on this machine)
+    orgDir: orgConfigDir,
+    orgRulesFile: join(orgConfigDir, 'org-rules.md'),
+    orgConfigFile: join(orgConfigDir, 'config.json'),
 
     // Manifests live alongside traces
     manifestDir: (date) => join(claudeDir, 'traces', date),

@@ -14,7 +14,7 @@ TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
 
 mkdir -p "$TRACE_DIR"
 
-TMPFILE=$(mktemp /tmp/hh-trace-capture-XXXXXX.json)
+TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-trace-capture-XXXXXX.json")
 cat > "$TMPFILE"
 
 python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'

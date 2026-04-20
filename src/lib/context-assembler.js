@@ -21,6 +21,7 @@ import { classifyIntent } from './trace-utils.js';
 import { resolvePaths } from './paths.js';
 import { join } from 'path';
 import { mergeRouteConfigs, mergeEffectivenessScores, mergeProjectConfigs } from './config-merge.js';
+import { parseRuleLines } from './behavioral-scoring.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,6 +138,77 @@ function loadScoresFromFile(filePath) {
     scores[match[1]] = parseFloat(match[2]);
   }
   return scores;
+}
+
+// ---------------------------------------------------------------------------
+// Org-level rules loading
+// ---------------------------------------------------------------------------
+
+/**
+ * Load org-level rules from ~/.config/harness-harness/org-rules.md.
+ * These are shared across all repos on the developer's machine.
+ */
+export function loadOrgRules(paths) {
+  if (!paths.orgRulesFile || !existsSync(paths.orgRulesFile)) return [];
+  const content = readFileSync(paths.orgRulesFile, 'utf8');
+  return parseRuleLines(content);
+}
+
+/**
+ * Build a layered rules block for injection into <harness-context>.
+ * Three layers with clear provenance:
+ *   Personal (this developer) > Repo (this codebase) > Org (company-wide)
+ */
+export function buildLayeredRules(routeSection, intent, paths) {
+  const parts = [];
+  const allRuleTexts = [];
+
+  // Layer 1: Personal rules (highest priority, gitignored)
+  if (paths.localRoutesDir) {
+    const filename = intent.replace(/:/g, '-') + '.md';
+    const personalPath = `${paths.localRoutesDir}/${filename}`;
+    if (existsSync(personalPath)) {
+      const content = readFileSync(personalPath, 'utf8');
+      const personalRules = parseRuleLines(content);
+      if (personalRules.length > 0) {
+        parts.push('**Your personal rules** (highest priority):');
+        for (const r of personalRules) {
+          parts.push(`- ${r}`);
+          allRuleTexts.push(r);
+        }
+        parts.push('');
+      }
+    }
+  }
+
+  // Layer 2: Repo rules (from route config, committed to this repo)
+  if (routeSection) {
+    const repoRules = parseRuleLines(routeSection);
+    if (repoRules.length > 0) {
+      parts.push('**Repo rules** (this codebase, committed to git):');
+      for (const r of repoRules) {
+        parts.push(`- ${r}`);
+        allRuleTexts.push(r);
+      }
+      parts.push('');
+    }
+  }
+
+  // Layer 3: Org rules (lowest priority, shared across all repos)
+  const orgRules = loadOrgRules(paths);
+  // Only include org rules not already covered by repo or personal rules
+  const covered = new Set(allRuleTexts.map(r => r.toLowerCase().slice(0, 30)));
+  const uniqueOrg = orgRules.filter(r => !covered.has(r.toLowerCase().slice(0, 30)));
+  if (uniqueOrg.length > 0) {
+    parts.push('**Org rules** (company-wide, all repos):');
+    for (const r of uniqueOrg) {
+      parts.push(`- ${r}`);
+      allRuleTexts.push(r);
+    }
+    parts.push('');
+  }
+
+  return { content: parts.join('\n'), allRules: allRuleTexts };
 }
 
 // ---------------------------------------------------------------------------
@@ -377,20 +449,29 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
   }
   manifestSlots.identity.tokens = estimateTokens(identity);
 
-  // --- Slot 2: Route Context ---
+  // --- Slot 2: Route Context (with layered rules) ---
   let routeRules = '';
   const routeContextFiles = [];
   const routeSection = route.sections['Route Context']
     ? extractSectionContent(route.sections['Route Context'])
     : '';
 
-  if (routeSection) {
-    routeRules = routeSection;
-    routeContextFiles.push('route-config (inline rules)');
+  // Build layered rules: personal > team > defaults
+  const { content: layeredRulesContent, allRules: plainTextRules } = buildLayeredRules(routeSection, intent, paths);
 
+  if (layeredRulesContent) {
+    routeRules = layeredRulesContent;
+    routeContextFiles.push('layered-rules');
+  }
+
+  // Legacy: also extract coded rule IDs (XX-NNN) for backward compatibility
+  if (routeSection) {
     const inlineRuleIds = routeSection.match(/\b[A-Z]{2,4}-\d{2,4}\b/g) || [];
     for (const id of inlineRuleIds) rulesInjected.add(id);
+  }
 
+  // Add any remaining route section content (headers, Load If Budget Allows files)
+  if (routeSection) {
     const budgetPaths = extractLoadIfBudgetPaths(routeSection);
     if (budgetPaths.length > 0) {
       const inlineTokens = estimateTokens(routeRules);
@@ -441,6 +522,7 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
     total_tokens_injected: tokensUsed,
     budget_used_percent: budgetPercent,
     rules_injected: [...rulesInjected].sort(),
+    plain_text_rules: plainTextRules || [],
   };
 
   // --- Output ---

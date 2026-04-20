@@ -36,7 +36,26 @@ export function parseSummary(content) {
   }
 
   const slotUtilization = parseSlotUtilization(content);
-  return { route, scores, slotUtilization };
+  const behavioral = parseBehavioralCompliance(content);
+  return { route, scores, slotUtilization, behavioral };
+}
+
+/**
+ * Parse the Behavioral Compliance table from a session summary.
+ * Returns an array of { rule, status, evidence } or empty array.
+ */
+export function parseBehavioralCompliance(content) {
+  const tablePattern = /### Behavioral Compliance\n\n\|[^\n]+\n\|[-| ]+\n((?:\|[^\n]+\n)*)/;
+  const tableMatch = content.match(tablePattern);
+  if (!tableMatch) return [];
+
+  const results = [];
+  const rowRe = /^\|\s*(.+?)\s*\|\s*(COMPLIANT|VIOLATED|UNVERIFIABLE|NOT_APPLICABLE)\s*\|\s*(.+?)\s*\|$/gm;
+  let match;
+  while ((match = rowRe.exec(tableMatch[1])) !== null) {
+    results.push({ rule: match[1].trim(), status: match[2], evidence: match[3].trim() });
+  }
+  return results;
 }
 
 export function parseSlotUtilization(content) {

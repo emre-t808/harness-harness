@@ -200,9 +200,56 @@ async function main() {
     } catch { /* skip */ }
   }
 
-  // Write summary
+  // Capture git diff for behavioral scoring
   const traceDir = path.join(TRACES_DIR, date);
   fs.mkdirSync(traceDir, { recursive: true });
+  let sessionDiff = null;
+  try {
+    const { execSync: exec } = await import('child_process');
+    const diff = exec('git diff HEAD', { cwd: PROJECT_DIR, encoding: 'utf8', maxBuffer: 512 * 1024, timeout: 5000 });
+    if (diff && diff.trim()) {
+      sessionDiff = diff.slice(0, 50000); // Cap at 50KB
+      fs.writeFileSync(path.join(traceDir, `${sessionId}-diff.patch`), sessionDiff, 'utf8');
+    }
+  } catch { /* not a git repo, no changes, or timeout — non-fatal */ }
+
+  // Behavioral scoring: check plain-text rules against the diff
+  if (HARNESS_PACKAGE_DIR && !HARNESS_PACKAGE_DIR.startsWith('{{')) {
+    try {
+      const scoringPath = path.join(HARNESS_PACKAGE_DIR, 'src', 'lib', 'behavioral-scoring.js');
+      const { scoreRules } = await import(scoringPath);
+
+      // Load plain-text rules from manifest
+      let plainTextRules = [];
+      if (fs.existsSync(manifestFile)) {
+        try {
+          const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+          plainTextRules = manifest.plain_text_rules || [];
+        } catch {}
+      }
+
+      if (plainTextRules.length > 0) {
+        const behavioralResults = scoreRules(plainTextRules, sessionDiff, events);
+        const verified = behavioralResults.filter(r => r.status === 'COMPLIANT' || r.status === 'VIOLATED');
+        const compliant = behavioralResults.filter(r => r.status === 'COMPLIANT').length;
+        const violated = behavioralResults.filter(r => r.status === 'VIOLATED').length;
+        const unverifiable = behavioralResults.filter(r => r.status === 'UNVERIFIABLE').length;
+        const notApplicable = behavioralResults.filter(r => r.status === 'NOT_APPLICABLE').length;
+
+        summary += '\n### Behavioral Compliance\n\n';
+        summary += `| Rule | Status | Evidence |\n|------|--------|----------|\n`;
+        for (const r of behavioralResults) {
+          if (r.status === 'NOT_APPLICABLE') continue; // Skip noise
+          summary += `| ${r.rule} | ${r.status} | ${r.evidence} |\n`;
+        }
+        summary += `\n- Compliant: ${compliant} | Violated: ${violated} | Unverifiable: ${unverifiable} | N/A: ${notApplicable}\n`;
+      }
+    } catch (err) {
+      process.stderr.write(`[hh-behavioral-scoring] ${err.message}\n`);
+    }
+  }
+
+  // Write summary
   fs.writeFileSync(path.join(traceDir, `${sessionId}-summary.md`), summary, 'utf8');
 
   // Update index

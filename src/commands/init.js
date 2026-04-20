@@ -188,13 +188,19 @@ loadAssembler().then(m => m.main(projectDir)).catch(() => process.exit(1));
   if (!localOnly) {
     if (!fs.existsSync(paths.configFile)) {
       const config = {
-        version: '0.2.0',
+        version: '0.3.0',
         projectDir,
         budgetTokens: 130000,
         customIntents: [],
         fileToRules: {},
         retentionDays: 30,
         initMode: traceOnly ? 'trace-only' : replaceMode ? 'replace' : 'merge',
+        governance: {
+          mode: 'auto',
+          cooldownHours: 48,
+          minSessions: { demote: 5, budgetRebalance: 3, promoteMustLoad: 8, promoteIdentity: 10 },
+          protectPrevented: true,
+        },
       };
       fs.writeFileSync(paths.configFile, JSON.stringify(config, null, 2), 'utf8');
       console.log('  Config: .harness/config.json created');

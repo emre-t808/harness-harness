@@ -1,0 +1,9 @@
+{
+  "version": "0.2.0",
+  "projectDir": "/Users/emretuncbilek/harness-harness",
+  "budgetTokens": 130000,
+  "customIntents": [],
+  "fileToRules": {},
+  "retentionDays": 30,
+  "initMode": "merge"
+}

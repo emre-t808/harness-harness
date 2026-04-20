@@ -1,0 +1,6 @@
+# Harness Harness
+sessions/archive/
+hooks-backup/
+
+# Per-developer local overrides (never commit)
+local/

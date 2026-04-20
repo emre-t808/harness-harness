@@ -19,7 +19,7 @@ fi
 
 # Read source from stdin
 SOURCE="startup"
-TMPFILE=$(mktemp /tmp/hh-session-start-XXXXXX.json)
+TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-session-start-XXXXXX.json")
 cat > "$TMPFILE"
 if command -v python3 &>/dev/null; then
   SOURCE=$(python3 -c "import json,sys; d=json.load(open('$TMPFILE')); print(d.get('source','startup'))" 2>/dev/null || echo "startup")

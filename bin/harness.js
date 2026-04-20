@@ -112,6 +112,16 @@ async function main() {
       await routes(projectDir, flags);
       break;
     }
+    case 'veto': {
+      const { veto } = await import('../src/commands/veto.js');
+      await veto(projectDir, flags);
+      break;
+    }
+    case 'discover': {
+      const { discover } = await import('../src/commands/discover.js');
+      await discover(projectDir, flags);
+      break;
+    }
     default:
       console.error(`Unknown command: ${command}`);
       console.error('Run harness-harness --help for usage.');
