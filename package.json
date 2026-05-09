@@ -1,6 +1,6 @@
 {
   "name": "harness-harness",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The self-improving agentic harness for Claude Code. Coding agents harness LLMs — but who harnesses the coding agents?",
   "type": "module",
   "bin": {
@@ -21,7 +21,8 @@
     "src/",
     "templates/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test 'src/**/*.test.js'",
