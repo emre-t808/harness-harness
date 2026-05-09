@@ -90,6 +90,15 @@ export async function runAggregation(paths) {
     } catch { /* start fresh */ }
   }
 
+  // Phase 9: structured event logging (replaces silent catches throughout)
+  const { logEvent } = await import('./event-log.js');
+  const logErr = (step, err) => {
+    try { logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'error', step, error: err.message, fatal: false }); }
+    catch { /* event log itself failed; nothing more we can do */ }
+  };
+
+  logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'start', inputs: { window_days: ANALYSIS_WINDOW_DAYS, sessions_found: parsed.length } });
+
   // Phase 7: Update Elo ratings BEFORE generating proposals
   let ratingState = { rules: {} };
   try {
@@ -97,7 +106,7 @@ export async function runAggregation(paths) {
     const priorRatingState = loadRatingState(paths);
     ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
     saveRatingState(paths, ratingState);
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('rating-state-save', err); }
 
   const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState);
 
@@ -111,7 +120,82 @@ export async function runAggregation(paths) {
       fs.mkdirSync(path.dirname(paths.propagationStateFile), { recursive: true });
       fs.writeFileSync(paths.propagationStateFile, JSON.stringify(newState, null, 2), 'utf8');
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('propagation-state-save', err); }
+
+  // Phase 9: Autonomous promotion / demotion (Finding 4)
+  let autonomousChanges = 0;
+  try {
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(paths.configFile, 'utf8')); } catch { /* default */ }
+    const autonomy = cfg.autonomy ?? { enabled: true }; // 0.5.0+: on by default
+
+    if (autonomy.enabled) {
+      const { shouldAutoApply } = await import('./autonomy.js');
+      const { saveRevert } = await import('./revert.js');
+      const { applyPromotion, applyDemotion } = await import('./apply-overrides.js');
+
+      let cooldown = {};
+      try { cooldown = JSON.parse(fs.readFileSync(paths.autonomyStateFile, 'utf8')); } catch { /* none yet */ }
+
+      const allProposals = [
+        ...proposals.promotions.map(p => ({ kind: 'promote', ...p })),
+        ...proposals.demotions.map(p => ({ kind: 'demote', ...p })),
+      ];
+
+      for (const proposal of allProposals) {
+        const decision = shouldAutoApply(proposal, ratingState, cooldown, { mode: autonomy.enabled ? 'on' : 'off' });
+        const eventId = `auto_${Date.now()}_${proposal.rule}`;
+
+        if (!decision.apply) {
+          logEvent(paths.eventsLogFile, {
+            hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+            decision: { action: 'skip-apply', kind: proposal.kind, rule: proposal.rule, reason: decision.reason },
+          });
+          continue;
+        }
+
+        // Snapshot all route configs for this rule before mutating, then apply.
+        try {
+          if (proposal.kind === 'promote') {
+            // applyPromotion edits every route file; snapshot them all.
+            const routeFiles = fs.existsSync(paths.routesDir)
+              ? fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'))
+              : [];
+            for (const rf of routeFiles) {
+              const rfPath = path.join(paths.routesDir, rf);
+              saveRevert(paths.revertsDir, `${eventId}_${rf}`, rfPath, fs.readFileSync(rfPath, 'utf8'));
+            }
+            const result = applyPromotion(proposal.rule, paths, false);
+            if (result.changed) autonomousChanges++;
+            logEvent(paths.eventsLogFile, {
+              hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+              decision: { action: 'auto-promote', rule: proposal.rule, reason: decision.reason, event_id: eventId, changes: result.descriptions },
+            });
+          } else if (proposal.kind === 'demote') {
+            const rfPath = path.join(paths.routesDir, `${proposal.route ?? 'general'}.md`);
+            if (fs.existsSync(rfPath)) {
+              saveRevert(paths.revertsDir, eventId, rfPath, fs.readFileSync(rfPath, 'utf8'));
+              const result = applyDemotion(rfPath, proposal.rule, false);
+              if (result.changed) autonomousChanges++;
+              logEvent(paths.eventsLogFile, {
+                hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+                decision: { action: 'auto-demote', rule: proposal.rule, route: proposal.route, reason: decision.reason, event_id: eventId, change: result.description },
+              });
+            }
+          }
+          cooldown[proposal.rule] = { last_applied: new Date().toISOString(), event_id: eventId };
+        } catch (err) {
+          logErr('auto-apply', err);
+        }
+      }
+
+      // Persist cooldown state
+      try {
+        fs.mkdirSync(path.dirname(paths.autonomyStateFile), { recursive: true });
+        fs.writeFileSync(paths.autonomyStateFile, JSON.stringify(cooldown, null, 2));
+      } catch (err) { logErr('autonomy-state-save', err); }
+    }
+  } catch (err) { logErr('autonomy', err); }
 
   // Format reports
   const previousUtil = loadPreviousUtilization(paths);
@@ -163,7 +247,7 @@ export async function runAggregation(paths) {
     if (activity.length > 0) {
       writeFileActivity(paths.fileActivityFile, activity, ANALYSIS_WINDOW_DAYS);
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('file-activity', err); }
 
   // Trace cleanup
   const cleanupResult = cleanupTraceFiles(paths.tracesDir, CLEANUP_RETENTION_DAYS);
@@ -176,7 +260,7 @@ export async function runAggregation(paths) {
   // Piggyback: update federated index (best-effort)
   try {
     await updateFederatedIndex(paths);
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('federated-index', err); }
 
   // Phase 7: Source staleness check
   let staleSources = 0;
@@ -207,9 +291,21 @@ export async function runAggregation(paths) {
           `- [${new Date().toISOString().slice(0, 10)}] ${msg}\n`,
           'utf8'
         );
-      } catch { /* non-fatal */ }
+      } catch (err) { logErr('staleness-notification', err); }
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('staleness-check', err); }
+
+  logEvent(paths.eventsLogFile, {
+    hook: 'Stop', handler: 'daily-check.js', phase: 'end',
+    outputs: {
+      sessionsAnalyzed: parsed.length,
+      proposals: totalProposals,
+      reordered: reorderedCount,
+      autonomousChanges,
+      tracesCleaned: cleanupResult.deletedFiles,
+      staleSources,
+    },
+  });
 
   return {
     ran: true,
@@ -217,6 +313,7 @@ export async function runAggregation(paths) {
     routes: allRoutes,
     proposals: totalProposals,
     reordered: reorderedCount,
+    autonomousChanges,
     tracesCleaned: cleanupResult.deletedFiles,
     staleSources,
   };

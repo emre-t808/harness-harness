@@ -88,8 +88,63 @@ harness-harness analyze
 | `cleanup` | Delete expired trace files (keeps summaries) |
 | `routes list` | List configured routes with budget breakdown |
 | `routes create <name>` | Create a new custom route |
+| `tail` | Stream `.harness/local/events.ndjson` — see hook activity live |
+| `explain [session]` | Reconstruct a session's hook timeline (default: most recent) |
+| `revert [event_id]` | List or roll back an autonomous change |
 
 All mutating commands support `--dry-run` to preview changes.
+
+## Observability
+
+Every hook invocation appends one structured NDJSON record to `.harness/local/events.ndjson`. The schema is small enough to scan by eye:
+
+```json
+{"ts":"2026-05-09T07:30:01.000Z","event_id":"evt_a3","hook":"PostToolUse","handler":"trace-capture.sh","phase":"end","exit_code":0,"session_id":"session-1778310466583"}
+```
+
+Phases:
+- `start` / `end` — bracket a hook invocation; `explain` pairs them and computes duration
+- `error` — non-fatal failure; includes `step` name and `error` message (replaces silent catches)
+- `decision` — autonomous action taken; includes `decision.action`, `decision.rule`, `decision.reason`
+
+```bash
+harness-harness tail               # Follow the events log
+harness-harness explain --last     # Show last session's timeline
+harness-harness explain <session>  # Specific session
+harness-harness explain --last --json   # Machine-readable
+```
+
+A session whose hook crashed shows up as an `orphan` entry — a `start` record with no matching `end`. The log rotates at 10 MB.
+
+## Autonomous Rule Management
+
+After every weekly analysis, the harness can move rules between `must-load`, `load-if-budget`, and `skip` slots without human review. Three gates protect against false positives:
+
+| Gate | Promotion | Demotion |
+|------|-----------|----------|
+| Stability | rated above threshold for ≥ 3 weekly runs | — |
+| Sample size | ≥ 5 sessions injected | ≥ 5 sessions on the same route |
+| Score | mean + 0.5σ Elo (or `weeks_above_threshold ≥ 3`) | average score = 0 |
+| Cool-down | same rule cannot move more than once per 7 days | same |
+
+Every auto-application snapshots the affected route configs into `.harness/local/reverts/` and writes a `decision` event. To roll back any change:
+
+```bash
+harness-harness revert                    # list available reverts
+harness-harness revert auto_<ts>_<rule>   # restore a specific snapshot
+```
+
+To disable: `{ "autonomy": { "enabled": false } }` in `.harness/config.json`.
+
+## Delegate Assembler
+
+Projects with their own context-assembly script can take over by setting:
+
+```json
+{ "assembler": { "delegate": "scripts/my-assembler.js" } }
+```
+
+`hh-assembler.js` will exec the configured script with stdin piped through and emit its output. If the delegate fails, falls through to the harness-harness assembler. Useful when you'd otherwise be running two assemblers in parallel and getting two `<harness-context>` blocks per prompt.
 
 ## What Gets Created
 

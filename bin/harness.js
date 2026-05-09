@@ -43,6 +43,9 @@ function printHelp() {
     rules             List, search, add, or migrate rules (registry)
     share             Import a rule from another repo
     activity          Show agent file activity heatmap
+    tail              Stream the events.ndjson log (Ctrl-C to exit)
+    explain [sid]     Show hook timeline for a session (default: most recent)
+    revert [evtid]    List or roll back an autonomous change
 
   Options:
     --dry-run         Preview changes without writing
@@ -147,6 +150,21 @@ async function main() {
     case 'activity': {
       const { activity } = await import('../src/commands/activity.js');
       await activity(projectDir, flags);
+      break;
+    }
+    case 'tail': {
+      const { tail } = await import('../src/commands/tail.js');
+      await tail(projectDir, flags);
+      break;
+    }
+    case 'explain': {
+      const { explain } = await import('../src/commands/explain.js');
+      await explain(projectDir, flags);
+      break;
+    }
+    case 'revert': {
+      const { revert } = await import('../src/commands/revert.js');
+      await revert(projectDir, flags);
       break;
     }
     default:

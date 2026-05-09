@@ -7,15 +7,39 @@
 
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 DATE_DIR=$(date -u +%Y-%m-%d)
-SESSION="${CLAUDE_SESSION_ID:-unknown}"
 
-TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
-TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
-
-mkdir -p "$TRACE_DIR"
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
 
 TMPFILE=$(mktemp /tmp/hh-trace-capture-XXXXXX.json)
 cat > "$TMPFILE"
+
+# Resolve session_id with precedence: stdin payload > CLAUDE_SESSION_ID env > "unknown".
+# Validates against [A-Za-z0-9._-]{1,128} to prevent path traversal in filenames.
+# Mirror logic in src/lib/trace-capture-resolve.js (kept in sync; ASCII-only here).
+SESSION=$(python3 - "$TMPFILE" "${CLAUDE_SESSION_ID:-}" <<'PYEOF'
+import json, re, sys
+SAFE = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
+try:
+    sid = json.load(open(sys.argv[1])).get('session_id')
+except Exception:
+    sid = None
+env = sys.argv[2] if len(sys.argv) > 2 else ''
+for c in (sid, env):
+    if c and SAFE.match(c):
+        print(c); sys.exit(0)
+print('unknown')
+PYEOF
+)
+
+TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
+# Filename matches existing manifest convention: ${session_id}.jsonl ↔ ${session_id}-manifest.json.
+# Note: session_id values already include the "session-" prefix from Claude Code's hook payload,
+# so we don't add another. When SESSION="unknown", the file is "unknown.jsonl" (legacy-compatible).
+TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
+
+mkdir -p "$TRACE_DIR"
 
 python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
 import base64, json, os, re, sys, datetime
@@ -134,4 +158,9 @@ print(json.dumps(event))
 PYEOF
 
 rm -f "$TMPFILE"
+
+# Emit a single end-event per hook invocation. Tools fire many PostToolUse hooks
+# per session; logging start+end on every one would 10x the events file. So we
+# emit only end here (the "start" of each event is implied by its ts).
+type hh_log_event >/dev/null 2>&1 && hh_log_event PostToolUse trace-capture.sh end 0
 exit 0

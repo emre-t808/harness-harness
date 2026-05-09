@@ -12,8 +12,14 @@ HARNESS_DIR="${PROJECT_DIR}/.harness"
 SESSIONS_DIR="${HARNESS_DIR}/sessions"
 SESSION="${CLAUDE_SESSION_ID:-unknown}"
 
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
+type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh start 0
+
 # Skip if harness not initialized
 if [ ! -d "$HARNESS_DIR" ]; then
+  type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh skip 0 '{"reason":"no .harness dir"}'
   exit 0
 fi
 
@@ -109,4 +115,5 @@ fi
 
 echo "</session-start>"
 
+type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh end 0
 exit 0

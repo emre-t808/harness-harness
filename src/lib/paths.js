@@ -69,6 +69,11 @@ export function resolvePaths(projectDir) {
     localOverridesFile: join(localDir, 'memory', 'route-overrides.md'),
     localNotificationsFile: join(localDir, 'memory', 'notifications.md'),
 
+    // Phase 9: observability + autonomy
+    eventsLogFile: join(localDir, 'events.ndjson'),
+    revertsDir: join(localDir, 'reverts'),
+    autonomyStateFile: join(localDir, 'autonomy-state.json'),
+
     // Manifests live alongside traces
     manifestDir: (date) => join(claudeDir, 'traces', date),
   };

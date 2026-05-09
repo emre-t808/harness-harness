@@ -3,6 +3,13 @@
 #
 # Checks if the Smart Assembler produced output. If not, injects minimal context.
 
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
+SESSION="${CLAUDE_SESSION_ID:-unknown}"
+
 MARKER_DIR="${HOME}/.cache/harness-harness"
 mkdir -p "$MARKER_DIR"
 MARKER_FILE="${MARKER_DIR}/assembler-success"
@@ -15,9 +22,12 @@ if [ -f "$MARKER_FILE" ]; then
 
     if [ "$MARKER_TIME" -gt "$LAST_CHECK" ]; then
         echo "$MARKER_TIME" > "$MARKER_SESSION_FILE"
+        type hh_log_event >/dev/null 2>&1 && hh_log_event UserPromptSubmit assembler-fallback.sh skip 0 '{"reason":"assembler succeeded"}'
         exit 0
     fi
 fi
+
+type hh_log_event >/dev/null 2>&1 && hh_log_event UserPromptSubmit assembler-fallback.sh end 0 '{"reason":"assembler missing or stale; injecting fallback"}'
 
 cat << 'EOF'
 <rules-reminder>
