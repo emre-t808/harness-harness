@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.5.0 (2026-05-09)
+
+### Fixed (the headline issues)
+
+- **Session-ID join (Finding 1).** `trace-capture.sh` now reads `session_id` from stdin first (falling back to `CLAUDE_SESSION_ID` env, then `unknown`) instead of relying on the env var alone. Trace files were silently being written to `unknown.jsonl` because the env var isn't set in many Claude Code hook contexts, which broke the join with `session-{id}-manifest.json` and stopped the Stop hook from ever producing summaries. Audit before/after: a Happiness install went from 0 summaries in the last 7 days to summaries on every session.
+- **Silent error handling (Finding 3).** Every `} catch { /* non-fatal */ }` in `daily-check.js` is gone. Failures now emit structured `phase: error` records to `.harness/local/events.ndjson` with the step name, error message, and fatal flag, so operators can see exactly what is failing instead of getting a green `Done.` while half the pipeline crashed.
+
+### Added
+
+- **Event log + observability layer.** Every hook now appends a structured NDJSON record to `.harness/local/events.ndjson` with start/end timestamps, exit codes, decisions, and errors. Schema: `ts`, `event_id`, `session_id`, `hook`, `handler`, `phase` (`start`/`end`/`error`/`decision`), `exit_code`, plus optional `inputs`/`outputs`/`step`/`error`/`decision` payloads. Auto-rotates at 10 MB. Two new CLI commands:
+  - `harness-harness tail` — `tail -f` the events log
+  - `harness-harness explain [session_id]` — reconstruct a session's hook timeline (default: most recent), pairing start/end records into single entries with durations, surfacing orphan starts as crashed hooks. Supports `--json` for scripting.
+- **Autonomous rule promotion / demotion (Finding 4).** Default-on. After `generateProposals`, daily-check feeds each proposal through `shouldAutoApply` with three gates:
+  - Promotion: `weeks_above_threshold ≥ 3` AND `sessions_injected ≥ 5`
+  - Demotion: `avgScore = 0` AND `sessions ≥ 5` on the same route
+  - Cool-down: same rule cannot be auto-moved more than once per 7 days
+  
+  Every auto-application snapshots affected route configs into `.harness/local/reverts/{event_id}.json` first. Every decision (apply or skip) is logged to events.ndjson with the `action` and `reason`. New CLI:
+  - `harness-harness revert` — list available rollback snapshots
+  - `harness-harness revert <event_id>` — restore a snapshot
+  
+  Disable: `{ "autonomy": { "enabled": false } }` in `.harness/config.json`.
+- **Delegate assembler (Finding 2).** Projects with their own assembler can take over context production via `{ "assembler": { "delegate": "scripts/my-assembler.js" } }`. The harness-harness assembler will exec the configured script with stdin piped through and emit its output verbatim, falling through to its own logic only if the delegate fails. Designed for cases like Happiness, where a richer bespoke assembler was running in parallel with the harness's own — producing two `<harness-context>` blocks per prompt.
+
+### Migration for existing users (0.4.x → 0.5.0)
+
+1. **Update:** `npx harness-harness@0.5.0 init --update`
+2. **Old `unknown.jsonl` traces** remain on disk; new traces use `session-{id}.jsonl`. Both are readable by `analyze`.
+3. **If you have a custom assembler in your project**, set `assembler.delegate` in `.harness/config.json` and remove the duplicate hook entry from `.claude/settings.json`.
+4. **To opt out of autonomous promotion:** `{ "autonomy": { "enabled": false } }` in `.harness/config.json`. With the default gate (3 weeks above threshold + 5 sessions), no rule moves on day one of an upgrade — autonomy only kicks in once a rule has demonstrably been stable for several weekly analyses.
+
+### Why this release matters
+
+These four fixes turn harness-harness from "instrumented but blind" into "instrumented and observable." Before 0.5.0, the harness could detect rule effectiveness but you could not see what it did, why it didn't promote anything, or why summaries stopped appearing. After 0.5.0, every hook invocation is one queryable line in events.ndjson, and the harness can act on its own evidence.
+
 ## 0.4.0 (2026-04-14)
 
 ### Features
