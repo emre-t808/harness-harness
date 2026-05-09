@@ -18,11 +18,12 @@ hh_log_event() {
   [ -z "$extra" ] && extra='{}'
   local events_file="${CLAUDE_PROJECT_DIR}/.harness/local/events.ndjson"
   local ts evt_id
-  # Best-effort millisecond precision. Falls back to second precision on systems
-  # whose `date` doesn't support %3N (e.g. BSD date on macOS pre-Sequoia).
+  # Always emit ISO-8601 with millisecond precision so timestamps sort
+  # correctly alongside Node's Date.toISOString() output. BSD date doesn't
+  # support %3N, so we synthesize the ms portion.
   ts=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ 2>/dev/null)
   case "$ts" in
-    *3NZ) ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) ;;
+    *3NZ) ts=$(date -u +%Y-%m-%dT%H:%M:%S.000Z) ;;
   esac
   evt_id="evt_$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
   [ -z "$evt_id" ] && evt_id="evt_$(date -u +%s)$$"
