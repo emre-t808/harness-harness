@@ -90,6 +90,15 @@ export async function runAggregation(paths) {
     } catch { /* start fresh */ }
   }
 
+  // Phase 9: structured event logging (replaces silent catches throughout)
+  const { logEvent } = await import('./event-log.js');
+  const logErr = (step, err) => {
+    try { logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'error', step, error: err.message, fatal: false }); }
+    catch { /* event log itself failed; nothing more we can do */ }
+  };
+
+  logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'start', inputs: { window_days: ANALYSIS_WINDOW_DAYS, sessions_found: parsed.length } });
+
   // Phase 7: Update Elo ratings BEFORE generating proposals
   let ratingState = { rules: {} };
   try {
@@ -97,7 +106,7 @@ export async function runAggregation(paths) {
     const priorRatingState = loadRatingState(paths);
     ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
     saveRatingState(paths, ratingState);
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('rating-state-save', err); }
 
   const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState);
 
@@ -111,7 +120,7 @@ export async function runAggregation(paths) {
       fs.mkdirSync(path.dirname(paths.propagationStateFile), { recursive: true });
       fs.writeFileSync(paths.propagationStateFile, JSON.stringify(newState, null, 2), 'utf8');
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('propagation-state-save', err); }
 
   // Format reports
   const previousUtil = loadPreviousUtilization(paths);
@@ -163,7 +172,7 @@ export async function runAggregation(paths) {
     if (activity.length > 0) {
       writeFileActivity(paths.fileActivityFile, activity, ANALYSIS_WINDOW_DAYS);
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('file-activity', err); }
 
   // Trace cleanup
   const cleanupResult = cleanupTraceFiles(paths.tracesDir, CLEANUP_RETENTION_DAYS);
@@ -176,7 +185,7 @@ export async function runAggregation(paths) {
   // Piggyback: update federated index (best-effort)
   try {
     await updateFederatedIndex(paths);
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('federated-index', err); }
 
   // Phase 7: Source staleness check
   let staleSources = 0;
@@ -207,9 +216,20 @@ export async function runAggregation(paths) {
           `- [${new Date().toISOString().slice(0, 10)}] ${msg}\n`,
           'utf8'
         );
-      } catch { /* non-fatal */ }
+      } catch (err) { logErr('staleness-notification', err); }
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { logErr('staleness-check', err); }
+
+  logEvent(paths.eventsLogFile, {
+    hook: 'Stop', handler: 'daily-check.js', phase: 'end',
+    outputs: {
+      sessionsAnalyzed: parsed.length,
+      proposals: totalProposals,
+      reordered: reorderedCount,
+      tracesCleaned: cleanupResult.deletedFiles,
+      staleSources,
+    },
+  });
 
   return {
     ran: true,

@@ -25,7 +25,23 @@ const TRACES_DIR = path.join(PROJECT_DIR, '.claude', 'traces');
 const INDEX_FILE = path.join(TRACES_DIR, 'index.md');
 const PATTERNS_FILE = path.join(PROJECT_DIR, '.harness', 'memory', 'trace-patterns.md');
 const SESSIONS_DIR = path.join(PROJECT_DIR, '.harness', 'sessions');
+const EVENTS_LOG = path.join(PROJECT_DIR, '.harness', 'local', 'events.ndjson');
 const DEVELOPER = process.env.USER || process.env.USERNAME || 'unknown';
+
+// Inline event-log emitter — duplicated from src/lib/event-log.js because
+// installed hooks shouldn't depend on the harness-harness package being
+// node_modules-resolvable from PROJECT_DIR.
+function logEventLocal(fields) {
+  try {
+    const record = {
+      ts: new Date().toISOString(),
+      event_id: 'evt_' + Math.random().toString(16).slice(2, 18).padEnd(16, '0'),
+      ...fields,
+    };
+    fs.mkdirSync(path.dirname(EVENTS_LOG), { recursive: true });
+    fs.appendFileSync(EVENTS_LOG, JSON.stringify(record) + '\n');
+  } catch { /* event log failure must not crash the hook */ }
+}
 
 function todayDate() { return new Date().toISOString().slice(0, 10); }
 
@@ -136,6 +152,7 @@ function ensureFile(filePath, header) {
 async function main() {
   let sessionId = 'unknown';
   let stopHookActive = false;
+  logEventLocal({ hook: 'Stop', handler: 'session-summary.js', phase: 'start' });
 
   try {
     const raw = await readStdin();
@@ -235,12 +252,28 @@ async function main() {
         process.stderr.write(`[hh-daily-check] Aggregated ${result.sessionsAnalyzed} sessions, ${result.proposals} proposals\n`);
       }
     } catch (err) {
+      logEventLocal({ hook: 'Stop', handler: 'session-summary.js', phase: 'error', step: 'daily-check', error: err.message, fatal: false });
       process.stderr.write(`[hh-daily-check] ${err.message}\n`);
     }
   }
+
+  logEventLocal({
+    hook: 'Stop', handler: 'session-summary.js', phase: 'end',
+    session_id: sessionId,
+    outputs: { events: events.length, refs: [...new Set(events.flatMap(e => e.referenced_context || []))].length },
+  });
 }
 
 main().catch(err => {
+  try {
+    fs.mkdirSync(path.dirname(EVENTS_LOG), { recursive: true });
+    fs.appendFileSync(EVENTS_LOG, JSON.stringify({
+      ts: new Date().toISOString(),
+      event_id: 'evt_' + Math.random().toString(16).slice(2, 18).padEnd(16, '0'),
+      hook: 'Stop', handler: 'session-summary.js', phase: 'error',
+      error: err.message, fatal: true,
+    }) + '\n');
+  } catch { /* nothing more we can do */ }
   process.stderr.write(`[hh-session-summary] ${err.message}\n`);
   process.exit(0);
 });
