@@ -8,6 +8,10 @@
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 DATE_DIR=$(date -u +%Y-%m-%d)
 
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
+
 TMPFILE=$(mktemp /tmp/hh-trace-capture-XXXXXX.json)
 cat > "$TMPFILE"
 
@@ -154,4 +158,9 @@ print(json.dumps(event))
 PYEOF
 
 rm -f "$TMPFILE"
+
+# Emit a single end-event per hook invocation. Tools fire many PostToolUse hooks
+# per session; logging start+end on every one would 10x the events file. So we
+# emit only end here (the "start" of each event is implied by its ts).
+type hh_log_event >/dev/null 2>&1 && hh_log_event PostToolUse trace-capture.sh end 0
 exit 0
