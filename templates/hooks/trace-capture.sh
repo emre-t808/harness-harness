@@ -7,15 +7,35 @@
 
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 DATE_DIR=$(date -u +%Y-%m-%d)
-SESSION="${CLAUDE_SESSION_ID:-unknown}"
-
-TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
-TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
-
-mkdir -p "$TRACE_DIR"
 
 TMPFILE=$(mktemp /tmp/hh-trace-capture-XXXXXX.json)
 cat > "$TMPFILE"
+
+# Resolve session_id with precedence: stdin payload > CLAUDE_SESSION_ID env > "unknown".
+# Validates against [A-Za-z0-9._-]{1,128} to prevent path traversal in filenames.
+# Mirror logic in src/lib/trace-capture-resolve.js (kept in sync; ASCII-only here).
+SESSION=$(python3 - "$TMPFILE" "${CLAUDE_SESSION_ID:-}" <<'PYEOF'
+import json, re, sys
+SAFE = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
+try:
+    sid = json.load(open(sys.argv[1])).get('session_id')
+except Exception:
+    sid = None
+env = sys.argv[2] if len(sys.argv) > 2 else ''
+for c in (sid, env):
+    if c and SAFE.match(c):
+        print(c); sys.exit(0)
+print('unknown')
+PYEOF
+)
+
+TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
+# Filename matches existing manifest convention: ${session_id}.jsonl ↔ ${session_id}-manifest.json.
+# Note: session_id values already include the "session-" prefix from Claude Code's hook payload,
+# so we don't add another. When SESSION="unknown", the file is "unknown.jsonl" (legacy-compatible).
+TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
+
+mkdir -p "$TRACE_DIR"
 
 python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
 import base64, json, os, re, sys, datetime
