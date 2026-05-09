@@ -45,6 +45,7 @@ function printHelp() {
     activity          Show agent file activity heatmap
     tail              Stream the events.ndjson log (Ctrl-C to exit)
     explain [sid]     Show hook timeline for a session (default: most recent)
+    revert [evtid]    List or roll back an autonomous change
 
   Options:
     --dry-run         Preview changes without writing
@@ -159,6 +160,11 @@ async function main() {
     case 'explain': {
       const { explain } = await import('../src/commands/explain.js');
       await explain(projectDir, flags);
+      break;
+    }
+    case 'revert': {
+      const { revert } = await import('../src/commands/revert.js');
+      await revert(projectDir, flags);
       break;
     }
     default:
