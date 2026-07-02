@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/activity.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/activity.ts
+depended_by: []
+indexed_at: '2026-04-14T10:27:53.783Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:587577655d50e39c411698a1f1b8471e271bb5372166a83d5b6bc32dad478886
+enrichment: static
+parse_error: false

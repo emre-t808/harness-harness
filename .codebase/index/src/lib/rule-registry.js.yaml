@@ -1,0 +1,43 @@
+id: harness-harness/src/lib/rule-registry.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: parseRulesYaml
+    params:
+      - content
+  - name: serializeRulesYaml
+    params:
+      - rules
+  - name: loadRuleRegistry
+    params:
+      - paths
+  - name: resolveRule
+    params:
+      - id
+      - registry
+  - name: addRuleToFile
+    params:
+      - rule
+      - registryFile
+  - name: filterRules
+    params:
+      - registry
+      - filter
+  - name: normalizedSimilarity
+    params:
+      - a
+      - b
+  - name: RULE_DEFAULTS
+    params: []
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/rule-parser.ts
+  - src/lib/file-lock.ts
+depended_by: []
+indexed_at: '2026-04-14T10:47:05.268Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:49288a6ac6aafbd617bf879957a2ef0fdceef07135d1c39bfa2f5f2b086b27e8
+enrichment: static
+parse_error: false

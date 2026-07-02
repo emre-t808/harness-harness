@@ -1,0 +1,21 @@
+id: harness-harness/src/commands/activity.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: activity
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+  - src/lib/federated-index.ts
+  - src/lib/activity.ts
+depended_by: []
+indexed_at: '2026-04-14T10:30:03.006Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:4f45c4ed78b66221cf3a0cd459d5b13d483d179a3c3a881ca493e3912bc791d7
+enrichment: static
+parse_error: false

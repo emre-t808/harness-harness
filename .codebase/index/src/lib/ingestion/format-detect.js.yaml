@@ -1,0 +1,17 @@
+id: harness-harness/src/lib/ingestion/format-detect.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: detectFormats
+    params:
+      - projectDir
+depends_on:
+  - npm:fs
+  - npm:path
+depended_by: []
+indexed_at: '2026-04-14T10:41:46.794Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:4693389297e881f4740c4524f88ec6c3d7114c75ca7772a3c0d3215169eaa30c
+enrichment: static
+parse_error: false

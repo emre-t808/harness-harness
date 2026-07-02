@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/trace-capture-resolve.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert
+  - src/lib/trace-capture-resolve.ts
+depended_by: []
+indexed_at: '2026-05-09T07:29:46.410Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:8fe545792cddf08f5c3e3bf6e0b685b523e30aa477dd465d1d32499c039bec5b
+enrichment: static
+parse_error: false

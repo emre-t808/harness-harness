@@ -1,0 +1,17 @@
+id: harness-harness/src/lib/rule-scoring.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: scoreRuleCompliance
+    params:
+      - traceEvents
+      - injectedRules
+depends_on:
+  - src/lib/minimatch-simple.ts
+depended_by: []
+indexed_at: '2026-04-14T10:45:39.705Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:1853aba250a6958415f350a45d8734b34951047fb413bc2467db58ceff6093fd
+enrichment: static
+parse_error: false

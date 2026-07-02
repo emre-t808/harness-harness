@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/ingestion/format-detect.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/ingestion/format-detect.ts
+depended_by: []
+indexed_at: '2026-04-14T10:43:22.958Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:cdeea748b581b9ff3f3fc339dd3c6291b05545ca1db32ba76a23178ad96b946c
+enrichment: static
+parse_error: false

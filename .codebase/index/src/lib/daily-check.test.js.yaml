@@ -1,0 +1,19 @@
+id: harness-harness/src/lib/daily-check.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/daily-check.ts
+  - src/lib/paths.ts
+depended_by: []
+indexed_at: '2026-04-14T14:28:42.876Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:ae541b1384c5ec4310bc801d80514afa5159665f697f75e9be8de4610a4315a9
+enrichment: static
+parse_error: false

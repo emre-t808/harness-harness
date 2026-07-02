@@ -1,0 +1,22 @@
+id: harness-harness/src/commands/share.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: share
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+  - src/lib/federated-index.ts
+  - src/lib/rule-registry.ts
+  - src/lib/rule-parser.ts
+depended_by: []
+indexed_at: '2026-04-14T10:29:44.550Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:c8de6904911979e901ff5186b444cd07aa9318845c85efb14db23ba8bb1288e4
+enrichment: static
+parse_error: false

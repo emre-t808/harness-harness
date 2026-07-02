@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/rule-registry.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:os
+  - npm:path
+  - src/lib/rule-registry.ts
+depended_by: []
+indexed_at: '2026-04-14T10:47:22.867Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:e3aecd7951bf79b741890d0eb74eaadac4dbbcf82aadce710e4e15eb0653bba8
+enrichment: static
+parse_error: false

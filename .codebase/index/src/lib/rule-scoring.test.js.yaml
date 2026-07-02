@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/rule-scoring.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/rule-scoring.ts
+depended_by: []
+indexed_at: '2026-04-14T10:46:03.806Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:850fc208ec177109226e820bc9952eaafe86bbae63baf41f86024074a4d27a64
+enrichment: static
+parse_error: false

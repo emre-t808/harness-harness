@@ -1,0 +1,29 @@
+id: harness-harness/src/lib/ingestion/parsers.js
+type: utility
+language: javascript
+tags:
+  - crypto
+exports:
+  - name: computeSourceHash
+    params:
+      - filePath
+  - name: parseSourceFile
+    params:
+      - filePath
+      - format
+      - projectDir
+  - name: detectSeverity
+    params:
+      - text
+depends_on:
+  - npm:fs
+  - npm:path
+  - npm:crypto
+  - src/lib/ingestion/markdown-parser.ts
+  - src/lib/rule-parser.ts
+depended_by: []
+indexed_at: '2026-04-14T10:42:30.326Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:e08d4c578fd928515e9ad60d21cc4bf49e38d0e810648fc1a02d38ab4d73c8ea
+enrichment: static
+parse_error: false

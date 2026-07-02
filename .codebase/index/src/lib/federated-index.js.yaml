@@ -1,0 +1,32 @@
+id: harness-harness/src/lib/federated-index.js
+type: utility
+language: javascript
+tags:
+  - config
+exports:
+  - name: globalConfigDir
+    params: []
+  - name: traceIndexPath
+    params: []
+  - name: reposFilePath
+    params: []
+  - name: readTraceIndex
+    params: []
+  - name: writeTraceIndex
+    params:
+      - repos
+  - name: updateFederatedIndex
+    params:
+      - paths
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/file-lock.ts
+  - src/lib/rule-registry.ts
+  - src/lib/activity.ts
+depended_by: []
+indexed_at: '2026-04-14T10:30:38.287Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:29373d81b725cae840fe52d2e59c7d2a277451cdd5d19a96e2562c631e612545
+enrichment: static
+parse_error: false

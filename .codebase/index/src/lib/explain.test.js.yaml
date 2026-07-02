@@ -1,0 +1,19 @@
+id: harness-harness/src/lib/explain.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/event-log.ts
+  - src/lib/explain.ts
+depended_by: []
+indexed_at: '2026-05-09T07:41:18.902Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:96c09a6fecd1e51de989b3525f58e95aa90cf9cd54f51839aaf6253b86ac0eed
+enrichment: static
+parse_error: false

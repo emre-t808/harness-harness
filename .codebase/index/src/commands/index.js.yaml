@@ -1,0 +1,20 @@
+id: harness-harness/src/commands/index.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: index
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/federated-index.ts
+  - src/lib/paths.ts
+depended_by: []
+indexed_at: '2026-04-14T10:18:44.954Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:7bfeaeacfb81a7042a4114935660349c2944fd0b1f37e2775ab873194767ee22
+enrichment: static
+parse_error: false

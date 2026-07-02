@@ -1,0 +1,25 @@
+id: harness-harness/src/lib/dismissed-rules.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: readDismissedRules
+    params: []
+  - name: trackSurfacedRules
+    params:
+      - surfacedRuleIds
+  - name: getDismissedRuleIds
+    params: []
+  - name: DISMISS_THRESHOLD
+    params: []
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/federated-index.ts
+  - src/lib/file-lock.ts
+depended_by: []
+indexed_at: '2026-04-14T10:28:03.678Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:dc26e7756a860ea90afd938b101d83e53016115c2055c387e3c98a4e0d539f31
+enrichment: static
+parse_error: false

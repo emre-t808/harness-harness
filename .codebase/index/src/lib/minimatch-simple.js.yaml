@@ -1,0 +1,16 @@
+id: harness-harness/src/lib/minimatch-simple.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: minimatch
+    params:
+      - filePath
+      - pattern
+depends_on: []
+depended_by: []
+indexed_at: '2026-04-14T10:44:55.127Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:e6cd1fac9fc62a8f75e00dc0f55199a6b533ed96ca6b9c597889d2584a50219b
+enrichment: static
+parse_error: false

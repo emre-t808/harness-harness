@@ -1,0 +1,45 @@
+id: harness-harness/src/lib/rule-rating.js
+type: utility
+language: javascript
+tags:
+  - session
+exports:
+  - name: evidenceToMatchScore
+    params:
+      - evidence
+  - name: expectedScore
+    params:
+      - selfRating
+      - opponentRating
+  - name: updateRating
+    params:
+      - entry
+      - matchScore
+      - poolMean
+  - name: processSession
+    params:
+      - state
+      - sessionScores
+  - name: updateRatingsFromAggregation
+    params:
+      - state
+      - aggregated
+  - name: computePopulationStats
+    params:
+      - state
+  - name: loadRatingState
+    params:
+      - paths
+  - name: saveRatingState
+    params:
+      - paths
+      - state
+depends_on:
+  - npm:fs
+  - npm:path
+depended_by: []
+indexed_at: '2026-04-14T10:47:53.118Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:001036a3e78e210369ea87171c575d25e5850d3cb284a635447a4556188411b4
+enrichment: static
+parse_error: false

@@ -1,0 +1,79 @@
+id: harness-harness/src/lib/context-assembler.js
+type: utility
+language: javascript
+tags:
+  - config
+  - route
+  - session
+exports:
+  - name: DEFAULT_BUDGET
+    params: []
+  - name: getLastManifest
+    params: []
+  - name: estimateTokens
+    params:
+      - text
+  - name: parseRouteConfig
+    params:
+      - content
+  - name: loadRouteConfig
+    params:
+      - intent
+      - paths
+  - name: loadEffectivenessScores
+    params:
+      - paths
+  - name: loadTraceInsights
+    params:
+      - intent
+      - paths
+      - limit
+  - name: extractLoadIfBudgetPaths
+    params:
+      - sectionContent
+  - name: loadFilesWithinBudget
+    params:
+      - filePaths
+      - budgetTokens
+      - effectivenessScores
+      - projectDir
+      - fileToRules
+  - name: findActiveSession
+    params:
+      - paths
+  - name: loadWorkStatus
+    params:
+      - paths
+  - name: assembleWorkingMemory
+    params:
+      - intent
+      - firstTurn
+      - budgetTokens
+      - paths
+  - name: assembleContext
+    params:
+      - intent
+      - route
+      - paths
+      - userMessage
+      - fileToRules
+  - name: main
+    params:
+      - projectDir
+depends_on:
+  - npm:fs
+  - npm:child_process
+  - src/lib/trace-utils.ts
+  - src/lib/paths.ts
+  - npm:path
+  - src/lib/config-merge.ts
+  - src/lib/rule-parser.ts
+  - src/lib/rule-registry.ts
+  - src/lib/federated-index.ts
+  - src/lib/dismissed-rules.ts
+depended_by: []
+indexed_at: '2026-04-14T10:28:43.569Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:a375b805d9241d8d0418265ad3d9316724cc3af1dd1cb24f8012faec91333998
+enrichment: static
+parse_error: false

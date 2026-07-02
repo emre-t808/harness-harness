@@ -1,0 +1,27 @@
+id: harness-harness/src/commands/rules.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: rules
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+  - src/lib/rule-registry.ts
+  - src/lib/rule-parser.ts
+  - src/lib/federated-index.ts
+  - src/lib/context-assembler.ts
+  - src/lib/file-lock.ts
+  - src/lib/ingestion/format-detect.ts
+  - src/lib/ingestion/parsers.ts
+  - src/lib/rule-rating.ts
+depended_by: []
+indexed_at: '2026-04-14T10:51:21.201Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:8eb5682ea5f21f4792b167d80f53f29247a16bab9fa040f73786cfec8b337412
+enrichment: static
+parse_error: false

@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/ingestion/markdown-parser.js
+type: utility
+language: javascript
+tags:
+  - parser
+exports:
+  - name: extractRulesFromMarkdown
+    params:
+      - content
+      - sourceFile
+depends_on:
+  - src/lib/rule-parser.ts
+depended_by: []
+indexed_at: '2026-04-14T10:42:04.393Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:852fba859a1ccfc14de6a24dd15c9076bfd062e46552ee34f7b9f38d08aa58ba
+enrichment: static
+parse_error: false

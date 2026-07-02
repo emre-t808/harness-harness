@@ -1,0 +1,26 @@
+id: harness-harness/src/commands/health.js
+type: module
+language: javascript
+tags:
+  - health
+exports:
+  - name: health
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - src/lib/paths.ts
+  - src/lib/weekly-analysis.ts
+  - src/lib/federated-index.ts
+  - src/lib/staleness.ts
+  - src/lib/ingestion/format-detect.ts
+  - src/lib/bloat-detector.ts
+  - src/lib/rule-registry.ts
+  - src/lib/rule-rating.ts
+depended_by: []
+indexed_at: '2026-04-14T10:50:55.042Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:903454dd8410d3aeb8f4a50a164ca9f4794620b48d3fab19c3e9e1a7bf39d1a6
+enrichment: static
+parse_error: false

@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/autonomy.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert
+  - src/lib/autonomy.ts
+depended_by: []
+indexed_at: '2026-05-09T07:44:47.336Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:d77b30d98c571efa5d488b602a2affc3b3dd50a9ef29c4220502fbec12344bdd
+enrichment: static
+parse_error: false

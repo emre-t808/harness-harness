@@ -1,0 +1,19 @@
+id: harness-harness/src/commands/tail.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: tail
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:child_process
+  - src/lib/paths.ts
+depended_by: []
+indexed_at: '2026-05-09T07:42:27.496Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:176cbc7c0421f3c2e18839d16316abf5290a8d4eeaa77509d37f29a3451775d9
+enrichment: static
+parse_error: false

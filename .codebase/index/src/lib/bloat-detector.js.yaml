@@ -1,0 +1,26 @@
+id: harness-harness/src/lib/bloat-detector.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: computeBloatScore
+    params:
+      - stats
+  - name: bloatRecommendation
+    params:
+      - stats
+      - bloatScore
+  - name: bloatStatus
+    params:
+      - bloatScore
+  - name: MIN_INJECTIONS_FOR_BLOAT
+    params: []
+  - name: LOW_COVERAGE_THRESHOLD
+    params: []
+depends_on: []
+depended_by: []
+indexed_at: '2026-04-14T10:50:10.214Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:a586238ab40d77ead952d4a7e80e1f5f0ce0f22a9292f56625029c65832ed97a
+enrichment: static
+parse_error: false

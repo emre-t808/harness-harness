@@ -1,0 +1,27 @@
+id: harness-harness/src/lib/revert.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: saveRevert
+    params:
+      - revertsDir
+      - eventId
+      - targetPath
+      - originalContent
+  - name: applyRevert
+    params:
+      - revertsDir
+      - eventId
+  - name: listReverts
+    params:
+      - revertsDir
+depends_on:
+  - npm:fs
+  - npm:path
+depended_by: []
+indexed_at: '2026-05-09T07:46:06.660Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:28d48dd4a62af449f797d7c1720977ee78b5a82fc971b4a971b5cff46bee2327
+enrichment: static
+parse_error: false

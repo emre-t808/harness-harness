@@ -1,0 +1,26 @@
+id: harness-harness/src/lib/autonomy.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: PROMOTE_MIN_WEEKS
+    params: []
+  - name: PROMOTE_MIN_SESSIONS
+    params: []
+  - name: DEMOTE_MIN_SESSIONS
+    params: []
+  - name: COOLDOWN_DAYS
+    params: []
+  - name: shouldAutoApply
+    params:
+      - proposal
+      - ratingState
+      - cooldownState
+      - opts
+depends_on: []
+depended_by: []
+indexed_at: '2026-05-09T07:45:07.852Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:95edd7c1844515bbbcf5f4bf03f109a64f6bb750513ee2bbcf7f43922bf70339
+enrichment: static
+parse_error: false

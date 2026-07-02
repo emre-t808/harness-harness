@@ -1,0 +1,16 @@
+id: harness-harness/src/lib/paths.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: resolvePaths
+    params:
+      - projectDir
+depends_on:
+  - npm:path
+depended_by: []
+indexed_at: '2026-05-09T07:35:25.633Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:8781e03f9ac94fa145112089c3b31a2950020590520e25c89d3fe19a5f0bb0c9
+enrichment: static
+parse_error: false

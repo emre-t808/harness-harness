@@ -1,0 +1,19 @@
+id: harness-harness/src/lib/event-log.test.js
+type: test
+language: javascript
+tags:
+  - event
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/event-log.ts
+depended_by: []
+indexed_at: '2026-05-09T07:34:53.252Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:dac30aa04fc053c8d6111b8a9c110ec7bb74ca5a9c9357622fce6cd6c56a3c52
+enrichment: static
+parse_error: false

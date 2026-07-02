@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/ingestion/parsers.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:path
+  - npm:os
+  - src/lib/ingestion/parsers.ts
+depended_by: []
+indexed_at: '2026-04-14T10:43:08.310Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:ab8d6f27412513427d4e1eaacd60bc669afa0d061466daec491a0385c378c14a
+enrichment: static
+parse_error: false

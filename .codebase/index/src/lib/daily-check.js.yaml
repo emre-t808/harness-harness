@@ -1,0 +1,47 @@
+id: harness-harness/src/lib/daily-check.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: getLastAggregationDate
+    params:
+      - effectivenessFile
+  - name: writeNotification
+    params:
+      - notificationsFile
+      - proposalCount
+      - sessionCount
+  - name: runAggregation
+    params:
+      - paths
+  - name: runDailyCheckIfDue
+    params:
+      - projectDir
+  - name: AGGREGATION_INTERVAL_HOURS
+    params: []
+  - name: ANALYSIS_WINDOW_DAYS
+    params: []
+  - name: CLEANUP_RETENTION_DAYS
+    params: []
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+  - src/lib/weekly-analysis.ts
+  - src/lib/trace-cleanup.ts
+  - src/lib/file-lock.ts
+  - src/lib/federated-index.ts
+  - src/lib/activity.ts
+  - src/lib/event-log.ts
+  - src/lib/rule-rating.ts
+  - src/lib/autonomy.ts
+  - src/lib/revert.ts
+  - src/lib/apply-overrides.ts
+  - src/lib/rule-registry.ts
+  - src/lib/ingestion/parsers.ts
+depended_by: []
+indexed_at: '2026-05-09T07:47:18.455Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:fac61551e935efc92b7b3d29d2649fba1d5f7204cf9b25292f491c766847269e
+enrichment: static
+parse_error: false

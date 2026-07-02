@@ -1,0 +1,20 @@
+id: harness-harness/src/lib/staleness.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: computeStaleness
+    params:
+      - repo
+  - name: generateRecommendation
+    params:
+      - repo
+  - name: daysSince
+    params: []
+depends_on: []
+depended_by: []
+indexed_at: '2026-04-14T10:16:31.952Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:65f6eae58fd29fe030d11bec9db706f8bd9591b52ddc30f6213d9530e468bb12
+enrichment: static
+parse_error: false

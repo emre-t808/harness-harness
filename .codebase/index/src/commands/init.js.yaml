@@ -1,0 +1,22 @@
+id: harness-harness/src/commands/init.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: init
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - npm:url
+  - src/lib/paths.ts
+  - npm:harness-harness/assembler
+  - npm:${assemblerSrc}
+depended_by: []
+indexed_at: '2026-05-09T07:49:37.120Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:6accbe83ce62b1d8b246053fb39bb3c39e7bff6b2ab69f373bb577d5089972a0
+enrichment: static
+parse_error: false

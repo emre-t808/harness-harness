@@ -1,0 +1,19 @@
+id: harness-harness/src/commands/revert.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: revert
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - src/lib/paths.ts
+  - src/lib/revert.ts
+  - src/lib/event-log.ts
+depended_by: []
+indexed_at: '2026-05-09T07:48:22.981Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:110c03a5835bdd50a69399dd99230791ad2758c8ef22cca232bfdde36c5f4856
+enrichment: static
+parse_error: false

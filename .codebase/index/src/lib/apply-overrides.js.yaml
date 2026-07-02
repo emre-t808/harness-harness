@@ -1,0 +1,44 @@
+id: harness-harness/src/lib/apply-overrides.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: parseOverrides
+    params:
+      - content
+      - forceMode
+  - name: applyDemotion
+    params:
+      - routeConfigPath
+      - ruleId
+      - dryRun
+  - name: applyPromotion
+    params:
+      - ruleId
+      - paths
+      - dryRun
+  - name: applyBudgetChange
+    params:
+      - routeConfigPath
+      - newBudget
+      - dryRun
+  - name: parseBudgetDescription
+    params:
+      - routeConfigPath
+      - description
+  - name: markApplied
+    params:
+      - lineIndices
+      - paths
+      - dryRun
+      - developer
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+depended_by: []
+indexed_at: '2026-04-14T10:14:05.157Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:111ba7f61d5c2555c5536e059c0a66e59e70afe779ee9ee86cbe4cb633e5a900
+enrichment: static
+parse_error: false

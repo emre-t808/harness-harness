@@ -1,0 +1,65 @@
+id: harness-harness/src/lib/weekly-analysis.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: parseSummary
+    params:
+      - content
+  - name: parseSlotUtilization
+    params:
+      - content
+  - name: findRecentSummaries
+    params:
+      - days
+      - paths
+  - name: aggregateScores
+    params:
+      - summaries
+  - name: generateProposals
+    params:
+      - aggregated
+      - allRoutes
+      - propagationState
+      - ratingState
+  - name: reorderLoadIfBudget
+    params:
+      - routeConfigPath
+      - fileScores
+  - name: loadPreviousUtilization
+    params:
+      - paths
+  - name: computeTrend
+    params:
+      - current
+      - previous
+  - name: formatEffectivenessReport
+    params:
+      - aggregated
+      - summaryCount
+      - allRoutes
+      - days
+      - previousUtilization
+  - name: formatProposals
+    params:
+      - proposals
+  - name: PROMOTE_THRESHOLD
+    params: []
+  - name: DEMOTE_THRESHOLD
+    params: []
+  - name: UTILIZATION_HIGH
+    params: []
+  - name: UTILIZATION_LOW
+    params: []
+  - name: weightedAvg
+    params: []
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/paths.ts
+depended_by: []
+indexed_at: '2026-04-14T10:49:48.058Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:2bb5751193a452db634f92008b4c569d8f2585ea13e01361ce3988427ae50071
+enrichment: static
+parse_error: false

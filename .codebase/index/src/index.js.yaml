@@ -1,0 +1,26 @@
+id: harness-harness/src/index.js
+type: entry
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - src/lib/paths.ts
+  - src/lib/trace-utils.ts
+  - src/lib/rule-parser.ts
+  - src/lib/federated-index.ts
+  - src/lib/staleness.ts
+  - src/lib/context-assembler.ts
+  - src/lib/session-lifecycle.ts
+  - src/lib/weekly-analysis.ts
+  - src/lib/apply-overrides.ts
+  - src/lib/trace-cleanup.ts
+  - src/lib/daily-check.ts
+  - src/lib/rule-registry.ts
+  - src/lib/activity.ts
+  - src/lib/dismissed-rules.ts
+depended_by: []
+indexed_at: '2026-04-14T10:31:47.285Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:b0e7e901bae1aeae86f596a1ce3bb23d481e50604799d7868d67ccc6a5a4b230
+enrichment: static
+parse_error: false

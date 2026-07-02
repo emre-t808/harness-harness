@@ -1,0 +1,19 @@
+id: harness-harness/src/commands/register.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: register
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/federated-index.ts
+depended_by: []
+indexed_at: '2026-04-14T10:18:33.397Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:06dcf3e93787d87d09a7b0b39adc484138953ee888fc48e23529ba43bc03fbb6
+enrichment: static
+parse_error: false

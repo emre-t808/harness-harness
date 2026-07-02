@@ -1,0 +1,37 @@
+id: harness-harness/src/lib/trace-utils.js
+type: utility
+language: javascript
+tags:
+  - event
+  - session
+exports:
+  - name: classifyIntent
+    params:
+      - message
+      - customIntents
+  - name: extractReferencedRules
+    params:
+      - text
+      - knownRuleIds
+  - name: parseTraceEvent
+    params:
+      - input
+      - projectDir
+  - name: scoreReferencedContext
+    params:
+      - traceEvents
+      - injectedRules
+  - name: generateSessionSummary
+    params:
+      - options
+  - name: stripBase
+    params: []
+  - name: buildInputSummary
+    params: []
+depends_on: []
+depended_by: []
+indexed_at: '2026-04-14T10:12:47.972Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:0af959f8e5b5d09475d12cc899d0303914fb2b6c12dcdad147bcccf56e86880b
+enrichment: static
+parse_error: false

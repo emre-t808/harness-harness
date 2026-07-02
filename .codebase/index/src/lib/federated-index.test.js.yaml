@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/federated-index.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - npm:fs
+  - npm:os
+  - npm:path
+  - src/lib/federated-index.ts
+depended_by: []
+indexed_at: '2026-04-14T10:31:19.363Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:9e619a93202ec10fc18573e99c29bf4663029f9acf4881cb0fa9b5de1bf70081
+enrichment: static
+parse_error: false

@@ -1,0 +1,16 @@
+id: harness-harness/src/lib/ingestion/markdown-parser.test.js
+type: test
+language: javascript
+tags:
+  - parser
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/ingestion/markdown-parser.ts
+depended_by: []
+indexed_at: '2026-04-14T10:42:48.044Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:69ce3d6b59e259aeb1d04fab4393bc8993422ab805e2f78dd22c08f280ac401a
+enrichment: static
+parse_error: false

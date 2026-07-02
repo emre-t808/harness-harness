@@ -1,0 +1,17 @@
+id: harness-harness/src/lib/trace-capture-resolve.js
+type: utility
+language: javascript
+tags:
+  - session
+exports:
+  - name: resolveSessionId
+    params:
+      - stdinPayload
+      - envValue
+depends_on: []
+depended_by: []
+indexed_at: '2026-05-09T07:29:58.427Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:b363c3c6806c316c7b3115e4429f48f2990b2449d0996edcf51c0f95a70b75da
+enrichment: static
+parse_error: false

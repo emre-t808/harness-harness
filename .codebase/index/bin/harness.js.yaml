@@ -1,0 +1,28 @@
+id: harness-harness/bin/harness.js
+type: module
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:path
+  - npm:fs
+  - src/commands/init.ts
+  - src/commands/health.ts
+  - src/commands/analyze.ts
+  - src/commands/apply.ts
+  - src/commands/cleanup.ts
+  - src/commands/routes.ts
+  - src/commands/register.ts
+  - src/commands/index.ts
+  - src/commands/rules.ts
+  - src/commands/share.ts
+  - src/commands/activity.ts
+  - src/commands/tail.ts
+  - src/commands/explain.ts
+  - src/commands/revert.ts
+depended_by: []
+indexed_at: '2026-05-09T07:48:02.839Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:54f3f8313ce9c15a1001a7207ed6d172dbe061b4a31c467077ddb3d8cd9f7b10
+enrichment: static
+parse_error: false

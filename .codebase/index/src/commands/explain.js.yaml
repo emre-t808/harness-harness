@@ -1,0 +1,19 @@
+id: harness-harness/src/commands/explain.js
+type: module
+language: javascript
+tags: []
+exports:
+  - name: explain
+    params:
+      - projectDir
+      - flags
+depends_on:
+  - src/lib/paths.ts
+  - src/lib/event-log.ts
+  - src/lib/explain.ts
+depended_by: []
+indexed_at: '2026-05-09T07:42:49.697Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:aa3251300b77ebb83840630f07aace17abfbea7e8ad195eeb3af5cb64207be65
+enrichment: static
+parse_error: false

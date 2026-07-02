@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/rule-rating.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/rule-rating.ts
+depended_by: []
+indexed_at: '2026-04-14T10:48:10.883Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:ccc2774a310138d530f0cf84e66ebe8eced7412f301962814c48f2abc7fbf773
+enrichment: static
+parse_error: false

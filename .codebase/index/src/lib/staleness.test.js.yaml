@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/staleness.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/staleness.ts
+depended_by: []
+indexed_at: '2026-04-14T10:19:42.965Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:f79ca9d9966c1c7bc2d064bf9cc3b775feb0869f919f522c2b7d61b329ca75a9
+enrichment: static
+parse_error: false

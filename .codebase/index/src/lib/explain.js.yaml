@@ -1,0 +1,18 @@
+id: harness-harness/src/lib/explain.js
+type: utility
+language: javascript
+tags:
+  - session
+exports:
+  - name: explainSession
+    params:
+      - eventsFile
+      - sessionId
+depends_on:
+  - src/lib/event-log.ts
+depended_by: []
+indexed_at: '2026-05-09T07:41:36.165Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:f8aede877a9c6aac1afbf7fdd2329dff23ec16cafda40a65467b4037b3af7486
+enrichment: static
+parse_error: false

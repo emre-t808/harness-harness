@@ -1,0 +1,16 @@
+id: harness-harness/src/lib/rule-parser.test.js
+type: test
+language: javascript
+tags:
+  - parser
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/rule-parser.ts
+depended_by: []
+indexed_at: '2026-04-14T10:12:27.147Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:1a51bc929fbaa4c08b06cc336cccff4af4c7afc641c5ad8c908bdf29db958c14
+enrichment: static
+parse_error: false

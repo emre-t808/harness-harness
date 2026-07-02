@@ -1,0 +1,16 @@
+id: harness-harness/templates/hooks/session-summary.js
+type: module
+language: javascript
+tags:
+  - session
+exports: []
+depends_on:
+  - npm:fs
+  - npm:path
+  - npm:readline
+depended_by: []
+indexed_at: '2026-05-09T07:40:18.122Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:efbe4c5a89e84af03f40edfab287e0c152fab5254879af36e11ef0def077fcb4
+enrichment: static
+parse_error: false

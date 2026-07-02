@@ -1,0 +1,15 @@
+id: harness-harness/src/lib/bloat-detector.test.js
+type: test
+language: javascript
+tags: []
+exports: []
+depends_on:
+  - npm:node:test
+  - npm:node:assert/strict
+  - src/lib/bloat-detector.ts
+depended_by: []
+indexed_at: '2026-04-14T10:50:24.985Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:912265ad4d1d40b85ba19d6feef6ae0232b09c593c8f6b1324c098ccd1634d6d
+enrichment: static
+parse_error: false

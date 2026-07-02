@@ -1,0 +1,26 @@
+id: harness-harness/src/lib/event-log.js
+type: utility
+language: javascript
+tags:
+  - crypto
+  - event
+exports:
+  - name: logEvent
+    params:
+      - file
+      - fields
+      - opts
+  - name: readEvents
+    params:
+      - file
+      - filter
+depends_on:
+  - npm:fs
+  - npm:path
+  - npm:crypto
+depended_by: []
+indexed_at: '2026-05-09T07:34:33.602Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:48f18a681b922f6bfa1f028730e61353eaf5fcab27fde7d98fb195c631116fcd
+enrichment: static
+parse_error: false

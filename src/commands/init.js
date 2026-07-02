@@ -154,6 +154,26 @@ export async function init(projectDir, flags) {
   }
   console.log(`  Hooks: ${hooksToInstall.length} installed to .claude/hooks/`);
 
+  // 6a. Install hook helper library (templates/hooks/lib/* → .claude/hooks/lib/*)
+  // The bash event-log helper lives here so trace-capture/session-start/etc.
+  // can source it from a single place. Without this, bash hooks silently skip
+  // event emission (the [ -f ... ] && . ... guard fails open by design).
+  const libSrcDir = path.join(TEMPLATES_DIR, 'hooks', 'lib');
+  if (fs.existsSync(libSrcDir)) {
+    const libDestDir = path.join(paths.hooksDir, 'lib');
+    fs.mkdirSync(libDestDir, { recursive: true });
+    let libCopied = 0;
+    for (const f of fs.readdirSync(libSrcDir)) {
+      const src = path.join(libSrcDir, f);
+      if (!fs.statSync(src).isFile()) continue;
+      const dest = path.join(libDestDir, f);
+      fs.copyFileSync(src, dest);
+      if (f.endsWith('.sh')) fs.chmodSync(dest, 0o755);
+      libCopied++;
+    }
+    if (libCopied > 0) console.log(`  Hook lib: ${libCopied} helper(s) installed to .claude/hooks/lib/`);
+  }
+
   // 6b. Install slash commands (don't overwrite existing)
   const commandsDir = path.join(paths.claudeDir, 'commands');
   fs.mkdirSync(commandsDir, { recursive: true });

@@ -1,0 +1,26 @@
+id: harness-harness/src/lib/rule-parser.js
+type: utility
+language: javascript
+tags:
+  - crypto
+  - parser
+exports:
+  - name: computeRuleHash
+    params:
+      - text
+  - name: parseRuleLine
+    params:
+      - line
+      - source
+  - name: parseRulesFromSection
+    params:
+      - sectionContent
+      - sourceFile
+depends_on:
+  - npm:crypto
+depended_by: []
+indexed_at: '2026-04-14T10:12:08.881Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:662b8043c35c6790b00f19945b5df827077f9d9fbe0518f10b032d97b9d5cedd
+enrichment: static
+parse_error: false

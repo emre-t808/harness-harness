@@ -1,0 +1,27 @@
+id: harness-harness/src/lib/activity.js
+type: utility
+language: javascript
+tags: []
+exports:
+  - name: aggregateFileActivity
+    params:
+      - tracesDir
+      - days
+  - name: writeFileActivity
+    params:
+      - activityFile
+      - activity
+      - days
+  - name: readFileActivity
+    params:
+      - activityFile
+depends_on:
+  - npm:fs
+  - npm:path
+  - src/lib/file-lock.ts
+depended_by: []
+indexed_at: '2026-04-14T10:27:45.121Z'
+indexed_by: amiga/0.1.0
+source_hash: sha256:0c4738a3753333858225f7b5a8144f89333050f82e61fb0194826c01a0da287f
+enrichment: static
+parse_error: false
