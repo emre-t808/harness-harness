@@ -10,7 +10,9 @@ describe('daysSince', () => {
     assert.equal(daysSince('never'), Infinity);
   });
   it('returns positive number for past date', () => {
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    // Full ISO timestamp, not a date-only string: date-only parses as UTC
+    // midnight, which drifts past the upper bound in afternoon local time.
+    const yesterday = new Date(Date.now() - 86400000).toISOString();
     const days = daysSince(yesterday);
     assert.ok(days >= 0.9 && days <= 1.5);
   });
