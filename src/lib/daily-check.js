@@ -209,6 +209,18 @@ export async function runAggregation(paths) {
     fs.writeFileSync(targetEffFile, report, 'utf8');
   });
 
+  // Mirror into the shared effectiveness file: `health` and the daily-check
+  // due-gate both read paths.effectivenessFile, so writing only the local copy
+  // leaves health showing "No data yet" forever.
+  if (paths.localEffectivenessFile && paths.effectivenessFile !== paths.localEffectivenessFile) {
+    try {
+      fs.mkdirSync(path.dirname(paths.effectivenessFile), { recursive: true });
+      withFileLock(paths.effectivenessFile, () => {
+        fs.writeFileSync(paths.effectivenessFile, report, 'utf8');
+      });
+    } catch (err) { logErr('effectiveness-mirror', err); }
+  }
+
   // Write proposals to local (locked)
   const targetOverFile = paths.localOverridesFile || paths.overridesFile;
   fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
