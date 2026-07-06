@@ -69,10 +69,14 @@ function readTracefile(traceFile) {
   return events;
 }
 
-function deriveIntent(events) {
+function deriveIntent(events, manifest) {
   for (const evt of events) {
     if (evt.intent && evt.intent !== 'general') return evt.intent;
   }
+  // Trace events carry no intent field (Break B), so when no event stamped a
+  // non-general intent, fall back to the per-turn manifest's intent — the
+  // delegate's actual route classification.
+  if (manifest && manifest.intent) return manifest.intent;
   return 'general';
 }
 
@@ -176,13 +180,14 @@ async function main() {
   if (!fs.existsSync(traceFile)) process.exit(0);
 
   const events = readTracefile(traceFile);
-  const intent = deriveIntent(events);
 
   let manifest = null;
   const manifestFile = path.join(TRACES_DIR, date, `${sessionId}-manifest.json`);
   if (fs.existsSync(manifestFile)) {
     try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch { /* skip */ }
   }
+
+  const intent = deriveIntent(events, manifest);
 
   const rules = collectRules(events, manifest);
   const scores = scoreReferencedContext(events, rules);
