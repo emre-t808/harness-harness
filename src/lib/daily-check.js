@@ -143,7 +143,10 @@ export async function runAggregation(paths) {
       ];
 
       for (const proposal of allProposals) {
-        const decision = shouldAutoApply(proposal, ratingState, cooldown, { mode: autonomy.enabled ? 'on' : 'off' });
+        const decision = shouldAutoApply(proposal, ratingState, cooldown, {
+          mode: autonomy.enabled ? 'on' : 'off',
+          autoDemote: autonomy.autoDemote === true, // opt-in; see autonomy.js gate 4
+        });
         const eventId = `auto_${Date.now()}_${proposal.rule}`;
 
         if (!decision.apply) {

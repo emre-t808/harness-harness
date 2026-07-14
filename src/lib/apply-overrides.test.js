@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { markApplied, parseOverrides } from './apply-overrides.js';
+import { markApplied, parseOverrides, applyDemotion, applyPromotion } from './apply-overrides.js';
 
 describe('markApplied (Bug 4)', () => {
   it('includes developer name in applied status', () => {
@@ -92,5 +92,108 @@ describe('parseOverrides', () => {
     const result = parseOverrides(content, false);
     assert.equal(result.promotions.length, 1);
     assert.equal(result.promotions[0].rule, 'API-001');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A rule must survive its own promotion/demotion.
+//
+// Both apply paths used to OVERWRITE the rule's line with a note about the move:
+//   "- GA-001: Google → integrations/, NEVER MCP"
+//     demote  -> "- GA-001 (score: 0.00, demoted 2026-07-15)"
+//     promote -> "- GA-001: promoted to Identity layer (high effectiveness…)"
+// That deletes the rule the model is supposed to obey. Worse, it is self-sealing:
+// a rule whose text is gone can never be followed, so it never scores, so it stays
+// demoted forever. Route configs are content, not scoreboards.
+// ---------------------------------------------------------------------------
+
+describe('applyDemotion — preserves the rule it demotes', () => {
+  const ROUTE = [
+    '## Identity',
+    'Project identity.',
+    '',
+    '## Route Context',
+    '### Must Load',
+    '- GA-001: Google → integrations/, NEVER MCP',
+    '- CS-001: Functions under 40 lines',
+    '',
+    '### Skip (low effectiveness for this route)',
+    '',
+    '## Working Memory',
+    '- state.md',
+    '',
+  ].join('\n');
+
+  function routeFile() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-demote-'));
+    const file = path.join(dir, 'coding-backend.md');
+    fs.writeFileSync(file, ROUTE);
+    return file;
+  }
+
+  it('moves the rule line into Skip with its text intact', () => {
+    const file = routeFile();
+    const result = applyDemotion(file, 'GA-001', false);
+    const out = fs.readFileSync(file, 'utf8');
+
+    assert.equal(result.changed, true);
+    assert.ok(
+      out.includes('- GA-001: Google → integrations/, NEVER MCP'),
+      'the rule TEXT must survive demotion — otherwise the rule is destroyed, not demoted'
+    );
+    assert.ok(out.includes('demoted'), 'provenance of the move should be recorded');
+
+    const skipIdx = out.indexOf('### Skip');
+    assert.ok(out.indexOf('GA-001') > skipIdx, 'GA-001 should now sit under Skip');
+    assert.ok(out.includes('- CS-001: Functions under 40 lines'), 'other rules untouched');
+  });
+
+  it('is a no-op when the rule is already skipped', () => {
+    const file = routeFile();
+    applyDemotion(file, 'GA-001', false);
+    const second = applyDemotion(file, 'GA-001', false);
+    assert.equal(second.changed, false);
+  });
+});
+
+describe('applyPromotion — preserves the rule it promotes', () => {
+  function routeDir() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-promote-'));
+    fs.writeFileSync(path.join(dir, 'general.md'), [
+      '## Identity',
+      'Project identity.',
+      '',
+      '## Route Context',
+      '### Must Load',
+      '- GA-001: Google → integrations/, NEVER MCP',
+      '',
+      '## Working Memory',
+      '- state.md',
+      '',
+    ].join('\n'));
+    return dir;
+  }
+
+  it('moves the rule into Identity with its text intact, and out of Route Context', () => {
+    const dir = routeDir();
+    const result = applyPromotion('GA-001', { routesDir: dir }, false);
+    const out = fs.readFileSync(path.join(dir, 'general.md'), 'utf8');
+
+    assert.equal(result.changed, true);
+    assert.ok(
+      out.includes('- GA-001: Google → integrations/, NEVER MCP'),
+      'the rule TEXT must survive promotion'
+    );
+    assert.ok(!out.includes('promoted to Identity layer (high effectiveness'),
+      'the rule must not be replaced by a note about itself');
+
+    // It is a MOVE, not a duplication: exactly one GA-001 line, and it is in Identity.
+    const occurrences = (out.match(/GA-001/g) || []).length;
+    assert.equal(occurrences, 1, 'GA-001 should appear once — moved, not duplicated');
+
+    const identityIdx = out.indexOf('## Identity');
+    const routeCtxIdx = out.indexOf('## Route Context');
+    const ruleIdx = out.indexOf('GA-001');
+    assert.ok(ruleIdx > identityIdx && ruleIdx < routeCtxIdx, 'GA-001 should sit in Identity');
   });
 });

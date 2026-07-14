@@ -5,7 +5,36 @@
  * Every module imports from here instead of constructing paths ad-hoc.
  */
 
-import { join } from 'path';
+import { join, isAbsolute } from 'path';
+import { readFileSync } from 'fs';
+
+/**
+ * Where this project's route configs actually live.
+ *
+ * Defaults to `.harness/routes` (unchanged for every existing install), but a project
+ * whose live routes are elsewhere can say so with `"routesDir"` in `.harness/config.json`:
+ *
+ *   { "routesDir": "context/routes" }
+ *
+ * Without this, `analyze` / `apply` / `routes` / the daily tuner all read and WRITE
+ * `.harness/routes` — so in a project whose assembler reads its routes from somewhere
+ * else, every one of them silently operates on a directory nothing loads. That is not
+ * hypothetical: it happened, and the tuner spent months "tuning" a dead template dir.
+ *
+ * @param {string} projectDir
+ * @param {string} harnessDir
+ * @returns {string} absolute path to the route configs
+ */
+function resolveRoutesDir(projectDir, harnessDir) {
+  try {
+    const cfg = JSON.parse(readFileSync(join(harnessDir, 'config.json'), 'utf8'));
+    const dir = typeof cfg.routesDir === 'string' ? cfg.routesDir.trim() : '';
+    if (dir) return isAbsolute(dir) ? dir : join(projectDir, dir);
+  } catch {
+    // No config yet, or malformed — fall through to the default.
+  }
+  return join(harnessDir, 'routes');
+}
 
 /**
  * Build a paths object for a given project directory.
@@ -26,8 +55,8 @@ export function resolvePaths(projectDir) {
     tracesDir: join(claudeDir, 'traces'),
     traceIndex: join(claudeDir, 'traces', 'index.md'),
 
-    // Routes
-    routesDir: join(harnessDir, 'routes'),
+    // Routes (configurable — see resolveRoutesDir)
+    routesDir: resolveRoutesDir(projectDir, harnessDir),
 
     // Memory
     memoryDir: join(harnessDir, 'memory'),

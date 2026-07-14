@@ -13,6 +13,25 @@
  *   3. Cool-down   — same rule cannot be auto-moved more than once per
  *                    COOLDOWN_DAYS window. Stops oscillation.
  *
+ * A FOURTH gate, and the important one:
+ *
+ *   4. Direction   — auto-DEMOTION is opt-in (`autonomy.autoDemote: true`) and
+ *                    defaults to OFF, because the demote signal is unsound.
+ *
+ * Promotion fires on positive evidence: the rule was referenced, repeatedly, over
+ * weeks. That is a real signal. Demotion fires on `avgScore <= 0` — i.e. on the
+ * ABSENCE of evidence. But a rule only scores when its ID surfaces in a tool
+ * response, so a rule the model simply *obeys* scores 0.00 forever. Demoting on
+ * that is demoting for being quietly followed.
+ *
+ * Concretely, in the project this was found in: FD-001/002/003 (the frontend design
+ * rules) sat at 0.00 across 5+ sessions purely because nobody did frontend work that
+ * week — and they are Must-Load rules on the *frontend* route. Auto-demote would have
+ * stripped the frontend rules off the frontend route for lack of frontend work.
+ *
+ * Demotion proposals are still generated and written to route-overrides.md for a
+ * human to approve. They are just not applied by a bot on absence of evidence.
+ *
  * Returns { apply: boolean, reason: string } so callers can log the decision.
  */
 
@@ -22,8 +41,15 @@ export const DEMOTE_MIN_SESSIONS = 5;
 export const COOLDOWN_DAYS = 7;
 
 export function shouldAutoApply(proposal, ratingState, cooldownState, opts = {}) {
-  const { mode = 'off', now = new Date() } = opts;
+  const { mode = 'off', now = new Date(), autoDemote = false } = opts;
   if (mode === 'off') return { apply: false, reason: 'autonomy disabled' };
+
+  if (proposal.kind === 'demote' && !autoDemote) {
+    return {
+      apply: false,
+      reason: 'auto-demote is opt-in (autonomy.autoDemote) — a 0.00 score is absence of evidence, not evidence of uselessness; proposal left for human review',
+    };
+  }
 
   const cd = cooldownState[proposal.rule];
   if (cd?.last_applied) {

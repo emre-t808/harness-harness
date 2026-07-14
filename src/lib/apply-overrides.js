@@ -111,11 +111,20 @@ export function applyDemotion(routeConfigPath, ruleId, dryRun = false) {
     return { changed: false, description: `Rule ${ruleId} already in Skip section` };
   }
 
+  // MOVE the rule's own line — never overwrite it. Replacing
+  //   "- GA-001: Google → integrations/, NEVER MCP"
+  // with "- GA-001 (score: 0.00, demoted …)" destroys the rule itself: the model can no
+  // longer read what GA-001 says, so it can never follow it, so it scores 0.00 forever
+  // and stays demoted. A demotion must be reversible, and it must not shred the content
+  // it demotes. The provenance goes in a trailing HTML comment, which renders invisibly
+  // and keeps the rule text intact for whoever re-promotes it.
+  const demotedLine = `${match[0]} <!-- demoted ${today}: avg score 0.00 -->`;
+
   content = content.replace(match[0] + '\n', '');
   const skipMatch = content.match(/### Skip[^\n]*\n/);
   if (skipMatch) {
     const insertAt = content.indexOf(skipMatch[0]) + skipMatch[0].length;
-    content = content.slice(0, insertAt) + `- ${ruleId} (score: 0.00, demoted ${today})\n` + content.slice(insertAt);
+    content = content.slice(0, insertAt) + `${demotedLine}\n` + content.slice(insertAt);
   }
 
   if (!dryRun) fs.writeFileSync(routeConfigPath, content, 'utf8');
@@ -125,6 +134,7 @@ export function applyDemotion(routeConfigPath, ruleId, dryRun = false) {
 export function applyPromotion(ruleId, paths, dryRun = false) {
   const descriptions = [];
   const routeFiles = fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'));
+  const today = new Date().toISOString().slice(0, 10);
 
   for (const rf of routeFiles) {
     const rfPath = path.join(paths.routesDir, rf);
@@ -137,16 +147,28 @@ export function applyPromotion(ruleId, paths, dryRun = false) {
     }
 
     if (identityMatch) {
-      const insertAt = content.indexOf(identityMatch[0]) + identityMatch[0].length;
-      content = content.slice(0, insertAt) +
-        `\n- ${ruleId}: promoted to Identity layer (high effectiveness across all routes)` +
-        content.slice(insertAt);
-
+      // MOVE the rule's own line into Identity, text intact — do not synthesize a
+      // replacement. "- GA-001: promoted to Identity layer (high effectiveness)" tells
+      // the model precisely nothing about what GA-001 requires; promoting a rule must
+      // not delete it. Note `.*` not `.+`: a rule line starts "- GA-001: …", so there is
+      // nothing before the ID, and the old `.+` never matched — which meant the rule was
+      // duplicated into Identity instead of moved out of Route Context.
       const routeContextIdx = content.indexOf('## Route Context');
-      if (routeContextIdx >= 0) {
-        const ruleLineRe = new RegExp(`^- .+${ruleId}.+\n`, 'gm');
-        const before = content.slice(0, routeContextIdx);
-        const after = content.slice(routeContextIdx).replace(ruleLineRe, '');
+      const existing = routeContextIdx >= 0
+        ? content.slice(routeContextIdx).match(new RegExp(`^- .*${ruleId}.*$`, 'm'))
+        : null;
+      const promotedLine = existing
+        ? `${existing[0]} <!-- promoted ${today}: high effectiveness across routes -->`
+        : `- ${ruleId} <!-- promoted ${today}: high effectiveness across routes -->`;
+
+      const insertAt = content.indexOf(identityMatch[0]) + identityMatch[0].length;
+      content = content.slice(0, insertAt) + `\n${promotedLine}` + content.slice(insertAt);
+
+      const rcIdx = content.indexOf('## Route Context');
+      if (rcIdx >= 0) {
+        const ruleLineRe = new RegExp(`^- .*${ruleId}.*\n`, 'gm');
+        const before = content.slice(0, rcIdx);
+        const after = content.slice(rcIdx).replace(ruleLineRe, '');
         content = before + after;
       }
 
