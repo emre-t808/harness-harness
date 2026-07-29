@@ -10,7 +10,7 @@
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 HARNESS_DIR="${PROJECT_DIR}/.harness"
 SESSIONS_DIR="${HARNESS_DIR}/sessions"
-SESSION="${CLAUDE_SESSION_ID:-unknown}"
+SESSION=""
 
 # Source event-log helper if available (non-fatal if missing).
 HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
@@ -23,14 +23,74 @@ if [ ! -d "$HARNESS_DIR" ]; then
   exit 0
 fi
 
-# Read source from stdin
-SOURCE="startup"
-TMPFILE=$(mktemp /tmp/hh-session-start-XXXXXX.json)
-cat > "$TMPFILE"
-if command -v python3 &>/dev/null; then
-  SOURCE=$(python3 -c "import json,sys; d=json.load(open('$TMPFILE')); print(d.get('source','startup'))" 2>/dev/null || echo "startup")
+# Resolve session_id and source from the same captured payload before forming a path.
+TMPFILE=""
+cleanup_payload() {
+  [ -n "$TMPFILE" ] && rm -f -- "$TMPFILE"
+}
+trap cleanup_payload EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if ! TMPFILE=$(mktemp /tmp/hh-session-start-XXXXXX.json); then
+  exit 0
 fi
-rm -f "$TMPFILE"
+cat > "$TMPFILE"
+if ! command -v python3 &>/dev/null; then
+  exit 0
+fi
+
+PARSED=$(python3 - "$TMPFILE" <<'PYEOF'
+import json, os, re, sys
+
+SAFE = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as payload_file:
+        payload = json.load(payload_file)
+except Exception:
+    sys.exit(2)
+
+if not isinstance(payload, dict):
+    sys.exit(2)
+
+payload_supplied = (
+    'session_id' in payload and payload['session_id'] is not None
+)
+environment_supplied = 'CLAUDE_SESSION_ID' in os.environ
+
+if payload_supplied:
+    session = payload['session_id']
+elif environment_supplied:
+    session = os.environ['CLAUDE_SESSION_ID']
+else:
+    session = 'unknown'
+
+if (
+    not isinstance(session, str)
+    or session in ('.', '..')
+    or SAFE.fullmatch(session) is None
+):
+    sys.exit(2)
+
+source = payload.get('source', 'startup')
+if source not in ('startup', 'resume', 'clear', 'compact'):
+    sys.exit(2)
+
+print(session)
+print(source)
+PYEOF
+)
+PARSE_STATUS=$?
+cleanup_payload
+trap - EXIT HUP INT TERM
+if [ "$PARSE_STATUS" -ne 0 ]; then
+  exit 0
+fi
+
+SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
+SOURCE=$(printf '%s\n' "$PARSED" | sed -n '2p')
 
 # Create session directory if it doesn't exist
 SESSION_DIR="${SESSIONS_DIR}/${SESSION}"
