@@ -34,6 +34,27 @@ fi
 PARSED=$(python3 - "$TMPFILE" <<'PYEOF'
 import json, os, re, sys
 SAFE = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
+
+def safe_session(value):
+    return (
+        isinstance(value, str)
+        and value not in ('.', '..')
+        and SAFE.fullmatch(value) is not None
+    )
+
+def legacy_manifest_session():
+    cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
+        os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
+    try:
+        with open(os.path.join(cache_dir, 'current-manifest-path')) as pointer:
+            manifest_path = pointer.read().strip()
+        with open(manifest_path) as manifest_file:
+            manifest = json.load(manifest_file)
+        session = manifest.get('session')
+        return session if safe_session(session) else None
+    except Exception:
+        return None
+
 try:
     with open(sys.argv[1], encoding='utf-8') as payload_file:
         payload = json.load(payload_file)
@@ -56,12 +77,9 @@ elif environment_supplied:
 else:
     session = 'unknown'
     use_legacy_pointer = True
+    session = legacy_manifest_session() or session
 
-if (
-    not isinstance(session, str)
-    or session in ('.', '..')
-    or SAFE.fullmatch(session) is None
-):
+if not safe_session(session):
     sys.exit(2)
 
 print(session)

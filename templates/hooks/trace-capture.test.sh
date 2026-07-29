@@ -13,11 +13,14 @@ run_case() {
   local name="$1" payload="$2" env_state="$3" env_session="$4" expected_filename="$5"
   local tmpdir
   tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/runtime"
   if [ "$env_state" = "unset" ]; then
     env -u CLAUDE_SESSION_ID CLAUDE_PROJECT_DIR="$tmpdir" TMPDIR="$tmpdir" \
+      XDG_RUNTIME_DIR="$tmpdir/runtime" \
       bash "$TRACE_CAPTURE" <<<"$payload"
   else
     CLAUDE_PROJECT_DIR="$tmpdir" CLAUDE_SESSION_ID="$env_session" TMPDIR="$tmpdir" \
+      XDG_RUNTIME_DIR="$tmpdir/runtime" \
       bash "$TRACE_CAPTURE" <<<"$payload"
   fi
   local today
@@ -31,7 +34,7 @@ run_case() {
     ls -la "$trace_dir/" >&2 2>/dev/null || true
     fail "$name — expected file not found: $actual"
   fi
-  if find "$tmpdir" -name 'hh-trace-capture-*.json' -print -quit | grep -q .; then
+  if find "$tmpdir" -name 'hh-trace-capture.*' -print -quit | grep -q .; then
     fail "$name — captured payload temporary file was not removed"
   fi
   pass "$name"
