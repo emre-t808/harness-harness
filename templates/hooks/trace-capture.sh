@@ -21,7 +21,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if ! TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-trace-capture-XXXXXX.json"); then
+if ! TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-trace-capture.XXXXXX"); then
   exit 0
 fi
 cat > "$TMPFILE"

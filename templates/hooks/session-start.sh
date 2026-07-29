@@ -33,7 +33,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if ! TMPFILE=$(mktemp /tmp/hh-session-start-XXXXXX.json); then
+if ! TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-session-start.XXXXXX"); then
   exit 0
 fi
 cat > "$TMPFILE"
