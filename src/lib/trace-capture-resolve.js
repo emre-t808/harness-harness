@@ -1,16 +1,37 @@
 /**
  * trace-capture-resolve.js — Session ID resolution for trace-capture hooks.
  *
- * Precedence: stdin payload `session_id` > env `CLAUDE_SESSION_ID` > "unknown".
- * Validates against an allowlist regex to prevent path traversal in filenames.
+ * Tracks whether "unknown" came from true absence or an explicit safe value.
+ * Invalid supplied identity fails closed instead of falling through.
  */
 
 const SAFE_RE = /^[A-Za-z0-9._-]{1,128}$/;
 
-export function resolveSessionId(stdinPayload, envValue) {
-  const candidates = [stdinPayload?.session_id, envValue];
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.length > 0 && SAFE_RE.test(c)) return c;
+function isSafeSessionId(value) {
+  return (
+    typeof value === 'string'
+    && value !== '.'
+    && value !== '..'
+    && SAFE_RE.test(value)
+  );
+}
+
+export function resolveSessionId(stdinPayload, environment = {}) {
+  const payload = stdinPayload && typeof stdinPayload === 'object'
+    ? stdinPayload
+    : {};
+  const env = environment && typeof environment === 'object'
+    ? environment
+    : {};
+  const payloadSupplied = Object.hasOwn(payload, 'session_id')
+    && payload.session_id !== null;
+  const environmentSupplied = Object.hasOwn(env, 'CLAUDE_SESSION_ID');
+  if (!payloadSupplied && !environmentSupplied) {
+    return { sessionId: 'unknown', useLegacyPointer: true };
   }
-  return 'unknown';
+  const sessionId = payloadSupplied
+    ? payload.session_id
+    : env.CLAUDE_SESSION_ID;
+  if (!isSafeSessionId(sessionId)) return null;
+  return { sessionId, useLegacyPointer: false };
 }
