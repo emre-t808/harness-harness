@@ -12,26 +12,86 @@ DATE_DIR=$(date -u +%Y-%m-%d)
 HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
 [ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
 
-TMPFILE=$(mktemp /tmp/hh-trace-capture-XXXXXX.json)
-cat > "$TMPFILE"
+TMPFILE=""
+cleanup_payload() {
+  [ -n "$TMPFILE" ] && rm -f -- "$TMPFILE"
+}
+trap cleanup_payload EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# Resolve session_id with precedence: stdin payload > CLAUDE_SESSION_ID env > "unknown".
-# Validates against [A-Za-z0-9._-]{1,128} to prevent path traversal in filenames.
-# Mirror logic in src/lib/trace-capture-resolve.js (kept in sync; ASCII-only here).
-SESSION=$(python3 - "$TMPFILE" "${CLAUDE_SESSION_ID:-}" <<'PYEOF'
-import json, re, sys
+if ! TMPFILE=$(mktemp "${TMPDIR:-/tmp}/hh-trace-capture.XXXXXX"); then
+  exit 0
+fi
+cat > "$TMPFILE"
+if ! command -v python3 &>/dev/null; then
+  exit 0
+fi
+
+# Resolve identity and separately track whether "unknown" came from true absence.
+# Mirror the structured contract in src/lib/trace-capture-resolve.js.
+PARSED=$(python3 - "$TMPFILE" <<'PYEOF'
+import json, os, re, sys
 SAFE = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
+
+def safe_session(value):
+    return (
+        isinstance(value, str)
+        and value not in ('.', '..')
+        and SAFE.fullmatch(value) is not None
+    )
+
+def legacy_manifest_session():
+    cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
+        os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
+    try:
+        with open(os.path.join(cache_dir, 'current-manifest-path')) as pointer:
+            manifest_path = pointer.read().strip()
+        with open(manifest_path) as manifest_file:
+            manifest = json.load(manifest_file)
+        session = manifest.get('session')
+        return session if safe_session(session) else None
+    except Exception:
+        return None
+
 try:
-    sid = json.load(open(sys.argv[1])).get('session_id')
+    with open(sys.argv[1], encoding='utf-8') as payload_file:
+        payload = json.load(payload_file)
 except Exception:
-    sid = None
-env = sys.argv[2] if len(sys.argv) > 2 else ''
-for c in (sid, env):
-    if c and SAFE.match(c):
-        print(c); sys.exit(0)
-print('unknown')
+    sys.exit(2)
+
+if not isinstance(payload, dict):
+    sys.exit(2)
+
+payload_supplied = (
+    'session_id' in payload and payload['session_id'] is not None
+)
+environment_supplied = 'CLAUDE_SESSION_ID' in os.environ
+use_legacy_pointer = False
+
+if payload_supplied:
+    session = payload['session_id']
+elif environment_supplied:
+    session = os.environ['CLAUDE_SESSION_ID']
+else:
+    session = 'unknown'
+    use_legacy_pointer = True
+    session = legacy_manifest_session() or session
+
+if not safe_session(session):
+    sys.exit(2)
+
+print(session)
+print('legacy' if use_legacy_pointer else 'session')
 PYEOF
 )
+PARSE_STATUS=$?
+if [ "$PARSE_STATUS" -ne 0 ]; then
+  exit 0
+fi
+SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
+POINTER_MODE=$(printf '%s\n' "$PARSED" | sed -n '2p')
 
 TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
 # Filename matches existing manifest convention: ${session_id}.jsonl ↔ ${session_id}-manifest.json.
@@ -41,12 +101,13 @@ TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
 
 mkdir -p "$TRACE_DIR"
 
-python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
+python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" "$POINTER_MODE" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
 import base64, json, os, re, sys, datetime
 
 stdin_file = sys.argv[1] if len(sys.argv) > 1 else None
 env_session = sys.argv[2] if len(sys.argv) > 2 else None
 base_dir = (sys.argv[3] + "/") if len(sys.argv) > 3 else ""
+use_legacy_pointer = len(sys.argv) > 4 and sys.argv[4] == 'legacy'
 
 # Phase 8: response_snippet config (default: enabled)
 SNIPPET_CAP_BYTES = 2048
@@ -110,20 +171,36 @@ def extract_referenced_rules(text, known_rule_ids):
         return []
     return [rid for rid in known_rule_ids if rid in text]
 
-def load_known_rule_ids():
+def normalize_rule_ids(rules):
+    if not isinstance(rules, list):
+        return []
+    normalized = []
+    for rule in rules:
+        if isinstance(rule, str):
+            normalized.append(rule)
+        elif isinstance(rule, dict) and isinstance(rule.get('id'), str):
+            normalized.append(rule['id'])
+        else:
+            return []
+    return normalized
+
+def load_known_rule_ids(session, legacy_pointer):
     """Read rule IDs from the current session manifest."""
     cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
         os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
-    manifest_pointer = os.path.join(cache_dir, 'current-manifest-path')
+    if legacy_pointer:
+        manifest_pointer = os.path.join(cache_dir, 'current-manifest-path')
+    else:
+        manifest_pointer = os.path.join(
+            cache_dir, 'manifest-pointers', f'{session}.path')
     try:
         with open(manifest_pointer, 'r') as f:
             manifest_path = f.read().strip()
         with open(manifest_path, 'r') as f:
             manifest = json.loads(f.read())
-        rules = manifest.get('rules_injected', [])
-        if rules and isinstance(rules[0], dict):
-            return [r['id'] for r in rules]
-        return list(rules)
+        if manifest.get('session') != session:
+            return []
+        return normalize_rule_ids(manifest.get('rules_injected', []))
     except Exception:
         return []
 
@@ -138,7 +215,8 @@ event = {
     "input_summary": build_input_summary(tool_name, tool_input),
     "output_size": len(tool_response),
     "duration_ms": None,
-    "referenced_context": extract_referenced_rules(tool_response, load_known_rule_ids()),
+    "referenced_context": extract_referenced_rules(
+        tool_response, load_known_rule_ids(session_id, use_legacy_pointer)),
     "files_touched": files_touched,
     "outcome": bash_outcome(tool_response) if tool_name == "Bash" else None,
 }
@@ -157,7 +235,8 @@ if tool_name in ("Edit", "Write") and snippet_enabled():
 print(json.dumps(event))
 PYEOF
 
-rm -f "$TMPFILE"
+cleanup_payload
+trap - EXIT HUP INT TERM
 
 # Emit a single end-event per hook invocation. Tools fire many PostToolUse hooks
 # per session; logging start+end on every one would 10x the events file. So we

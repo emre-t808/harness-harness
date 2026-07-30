@@ -3,35 +3,78 @@ import assert from 'node:assert';
 import { resolveSessionId } from './trace-capture-resolve.js';
 
 test('resolveSessionId: prefers stdin payload over env', () => {
-  assert.strictEqual(
-    resolveSessionId({ session_id: 'session-abc' }, 'session-from-env'),
-    'session-abc'
+  assert.deepStrictEqual(
+    resolveSessionId(
+      { session_id: 'session-abc' },
+      { CLAUDE_SESSION_ID: 'session-from-env' },
+    ),
+    { sessionId: 'session-abc', useLegacyPointer: false },
   );
 });
 
 test('resolveSessionId: falls back to env when stdin missing', () => {
-  assert.strictEqual(resolveSessionId({}, 'session-from-env'), 'session-from-env');
-  assert.strictEqual(resolveSessionId(null, 'session-from-env'), 'session-from-env');
+  const environment = { CLAUDE_SESSION_ID: 'session-from-env' };
+  const expected = { sessionId: 'session-from-env', useLegacyPointer: false };
+  assert.deepStrictEqual(resolveSessionId({}, environment), expected);
+  assert.deepStrictEqual(resolveSessionId(null, environment), expected);
+  assert.deepStrictEqual(resolveSessionId({ session_id: null }, environment), expected);
 });
 
-test('resolveSessionId: returns "unknown" when both missing', () => {
-  assert.strictEqual(resolveSessionId({}, undefined), 'unknown');
-  assert.strictEqual(resolveSessionId({}, ''), 'unknown');
-  assert.strictEqual(resolveSessionId(null, null), 'unknown');
+test('resolveSessionId: marks unknown as legacy only when both identities are absent', () => {
+  const expected = { sessionId: 'unknown', useLegacyPointer: true };
+  assert.deepStrictEqual(resolveSessionId({}, {}), expected);
+  assert.deepStrictEqual(resolveSessionId(null, {}), expected);
+  assert.deepStrictEqual(resolveSessionId({ session_id: null }, {}), expected);
 });
 
-test('resolveSessionId: rejects path traversal and whitespace', () => {
-  assert.strictEqual(resolveSessionId({ session_id: '../etc/passwd' }, ''), 'unknown');
-  assert.strictEqual(resolveSessionId({ session_id: 'has spaces' }, ''), 'unknown');
-  assert.strictEqual(resolveSessionId({ session_id: 'has\nnewline' }, ''), 'unknown');
+test('resolveSessionId: treats explicitly supplied unknown as a known session', () => {
+  const expected = { sessionId: 'unknown', useLegacyPointer: false };
+  assert.deepStrictEqual(
+    resolveSessionId(
+      { session_id: 'unknown' },
+      { CLAUDE_SESSION_ID: 'environment-session' },
+    ),
+    expected,
+  );
+  assert.deepStrictEqual(
+    resolveSessionId({ session_id: null }, { CLAUDE_SESSION_ID: 'unknown' }),
+    expected,
+  );
 });
 
-test('resolveSessionId: rejects empty and oversized values', () => {
-  assert.strictEqual(resolveSessionId({ session_id: '' }, ''), 'unknown');
-  assert.strictEqual(resolveSessionId({ session_id: 'a'.repeat(200) }, ''), 'unknown');
+test('resolveSessionId: invalid supplied payload fails closed without env fallback', () => {
+  const environment = { CLAUDE_SESSION_ID: 'safe-environment' };
+  for (const value of [
+    '',
+    '.',
+    '..',
+    '../etc/passwd',
+    'has spaces',
+    'has\nnewline',
+    'séance',
+    'a'.repeat(129),
+    42,
+  ]) {
+    assert.strictEqual(resolveSessionId({ session_id: value }, environment), null);
+  }
+});
+
+test('resolveSessionId: invalid supplied environment identity fails closed', () => {
+  for (const value of ['', '.', '..', '../escape', 'séance', 'a'.repeat(129)]) {
+    assert.strictEqual(
+      resolveSessionId({ session_id: null }, { CLAUDE_SESSION_ID: value }),
+      null,
+    );
+  }
 });
 
 test('resolveSessionId: accepts safe alphanumeric, dash, underscore, dot', () => {
-  assert.strictEqual(resolveSessionId({ session_id: 'session-1778310466583' }, ''), 'session-1778310466583');
-  assert.strictEqual(resolveSessionId({ session_id: 'abc_123.def' }, ''), 'abc_123.def');
+  assert.deepStrictEqual(
+    resolveSessionId({ session_id: 'session-1778310466583' }, {}),
+    { sessionId: 'session-1778310466583', useLegacyPointer: false },
+  );
+  assert.deepStrictEqual(
+    resolveSessionId({ session_id: 'abc_123.def' }, {}),
+    { sessionId: 'abc_123.def', useLegacyPointer: false },
+  );
 });
