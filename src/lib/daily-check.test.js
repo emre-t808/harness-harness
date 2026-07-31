@@ -205,17 +205,19 @@ describe('runAggregation', () => {
     assert.ok(effContent.includes('CS-001'));
   });
 
-  it('appends proposals to existing overrides file', async () => {
+  it('appends real proposals to an existing overrides file without clobbering', async () => {
     const { tracesDir } = setupProject(tmpDir);
     const today = new Date().toISOString().slice(0, 10);
 
-    writeSummary(tracesDir, today, 'sess1', 'general', [
-      { rule: 'FO-001', score: 1.0, evidence: 'referenced' },
-    ]);
+    // A rule ignored across 3 sessions crosses the fallback demote threshold,
+    // producing a real proposal that should be recorded.
+    for (const sess of ['sess1', 'sess2', 'sess3']) {
+      writeSummary(tracesDir, today, sess, 'general', [
+        { rule: 'FO-001', score: 0.0, evidence: 'ignored' },
+      ]);
+    }
 
     const paths = resolvePaths(tmpDir);
-
-    // Write existing overrides to the local path (where runAggregation now writes)
     const targetOverFile = paths.localOverridesFile || paths.overridesFile;
     fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
     fs.writeFileSync(targetOverFile, '## Existing Proposals\n\n- Some old proposal\n', 'utf8');
@@ -223,8 +225,31 @@ describe('runAggregation', () => {
     await runAggregation(paths);
 
     const content = fs.readFileSync(targetOverFile, 'utf8');
-    assert.ok(content.includes('Existing Proposals'));
-    assert.ok(content.includes('Proposed Adjustments'));
+    assert.ok(content.includes('Existing Proposals'), 'existing content is preserved, not clobbered');
+    assert.ok(content.includes('Proposed Adjustments'), 'the real proposal block is appended');
+  });
+
+  it('leaves an existing overrides file unchanged when a run has no proposals', async () => {
+    const { tracesDir } = setupProject(tmpDir);
+    const today = new Date().toISOString().slice(0, 10);
+
+    // One session with a single high-scoring rule yields no actionable proposal.
+    writeSummary(tracesDir, today, 'sess1', 'general', [
+      { rule: 'FO-001', score: 1.0, evidence: 'referenced' },
+    ]);
+
+    const paths = resolvePaths(tmpDir);
+    const targetOverFile = paths.localOverridesFile || paths.overridesFile;
+    fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
+    const original = '## Existing Proposals\n\n- Some old proposal\n';
+    fs.writeFileSync(targetOverFile, original, 'utf8');
+
+    await runAggregation(paths);
+
+    // No empty "No proposals generated" block appended — this is the leak guard
+    // that kept the file from growing to thousands of lines of no-ops.
+    assert.equal(fs.readFileSync(targetOverFile, 'utf8'), original,
+      'an empty run must not append a no-op block');
   });
 });
 

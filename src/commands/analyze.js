@@ -77,14 +77,29 @@ export async function analyze(projectDir, flags) {
     fs.writeFileSync(effFile, report, 'utf8');
     console.log(`Updated: ${effFile}`);
 
-    fs.mkdirSync(path.dirname(overFile), { recursive: true });
-    const existing = fs.existsSync(overFile) ? fs.readFileSync(overFile, 'utf8') : '';
-    if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
-      fs.writeFileSync(overFile, proposalReport, 'utf8');
+    // Only record blocks that carry an actual proposal. A run with nothing to
+    // propose used to append a "No proposals generated" block anyway, so the
+    // file grew unbounded with empty no-ops (5,852 lines / hundreds of empty
+    // blocks before this guard). The effectiveness report keeps the run's
+    // timestamp, so the overrides file loses nothing by staying quiet.
+    const hasProposals =
+      proposals.promotions.length > 0 ||
+      proposals.demotions.length > 0 ||
+      proposals.budgetChanges.length > 0 ||
+      (proposals.propagations && proposals.propagations.length > 0);
+
+    if (hasProposals) {
+      fs.mkdirSync(path.dirname(overFile), { recursive: true });
+      const existing = fs.existsSync(overFile) ? fs.readFileSync(overFile, 'utf8') : '';
+      if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
+        fs.writeFileSync(overFile, proposalReport, 'utf8');
+      } else {
+        fs.appendFileSync(overFile, '\n' + proposalReport, 'utf8');
+      }
+      console.log(`Updated: ${overFile}`);
     } else {
-      fs.appendFileSync(overFile, '\n' + proposalReport, 'utf8');
+      console.log(`No proposals to record — ${overFile} left unchanged`);
     }
-    console.log(`Updated: ${overFile}`);
   }
 
   // 6. Auto-reorder

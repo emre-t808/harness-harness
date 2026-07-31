@@ -224,17 +224,27 @@ export async function runAggregation(paths) {
     } catch (err) { logErr('effectiveness-mirror', err); }
   }
 
-  // Write proposals to local (locked)
+  // Write proposals to local (locked). Only record blocks with an actual
+  // proposal: the daily tuner runs unattended, so appending a "No proposals
+  // generated" block on every empty run is what grew this file to thousands of
+  // lines. The effectiveness file keeps each run's timestamp regardless.
+  const hasProposals =
+    proposals.promotions.length > 0 ||
+    proposals.demotions.length > 0 ||
+    proposals.budgetChanges.length > 0 ||
+    (proposals.propagations && proposals.propagations.length > 0);
   const targetOverFile = paths.localOverridesFile || paths.overridesFile;
-  fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
-  withFileLock(targetOverFile, () => {
-    const existing = fs.existsSync(targetOverFile) ? fs.readFileSync(targetOverFile, 'utf8') : '';
-    if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
-      fs.writeFileSync(targetOverFile, proposalReport, 'utf8');
-    } else {
-      fs.appendFileSync(targetOverFile, '\n' + proposalReport, 'utf8');
-    }
-  });
+  if (hasProposals) {
+    fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
+    withFileLock(targetOverFile, () => {
+      const existing = fs.existsSync(targetOverFile) ? fs.readFileSync(targetOverFile, 'utf8') : '';
+      if (!existing || existing.includes('No proposals yet') || existing.includes('no proposals yet')) {
+        fs.writeFileSync(targetOverFile, proposalReport, 'utf8');
+      } else {
+        fs.appendFileSync(targetOverFile, '\n' + proposalReport, 'utf8');
+      }
+    });
+  }
 
   // Auto-reorder route configs
   let reorderedCount = 0;
