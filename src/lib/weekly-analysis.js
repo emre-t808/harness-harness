@@ -15,6 +15,11 @@ const FALLBACK_PROMOTE_THRESHOLD = 0.75;
 const FALLBACK_DEMOTE_THRESHOLD = 0.10;
 const MIN_POPULATION_FOR_ELO_THRESHOLDS = 10;
 const MIN_SESSIONS_FOR_ELO_DECISION = 5;
+// A demotion is a per-route claim ("skip this rule in THIS route"), so it needs
+// per-route evidence. Without this gate a rule injected once in a route, scoring
+// 0.00 there, was proposed for skipping on the strength of its session count in
+// OTHER routes.
+const MIN_ROUTE_SESSIONS_FOR_DEMOTION = 3;
 // Back-compat exports (kept for any external callers of the legacy names)
 const PROMOTE_THRESHOLD = FALLBACK_PROMOTE_THRESHOLD;
 const DEMOTE_THRESHOLD = FALLBACK_DEMOTE_THRESHOLD;
@@ -152,10 +157,11 @@ export function aggregateScores(summaries) {
       }
 
       if (!perRule[rule].routeScores[route]) {
-        perRule[rule].routeScores[route] = { totalWeightedScore: 0, totalWeight: 0 };
+        perRule[rule].routeScores[route] = { totalWeightedScore: 0, totalWeight: 0, sessions: 0 };
       }
       perRule[rule].routeScores[route].totalWeightedScore += score * weight;
       perRule[rule].routeScores[route].totalWeight += weight;
+      perRule[rule].routeScores[route].sessions++;
 
       if (!perRoute[route].ruleScores[rule]) {
         perRoute[route].ruleScores[rule] = { totalWeightedScore: 0, totalWeight: 0 };
@@ -172,12 +178,18 @@ export function aggregateScores(summaries) {
 // Proposal generation
 // ---------------------------------------------------------------------------
 
-export function generateProposals(aggregated, allRoutes, propagationState = {}, ratingState = null) {
+export function generateProposals(aggregated, allRoutes, propagationState = {}, ratingState = null, options = {}) {
   const { perRule, perRoute } = aggregated;
   const promotions = [];
   const demotions = [];
   const budgetChanges = [];
   const propagations = [];  // Phase 7
+  // Rules the project declares must never be proposed for demotion (its safety
+  // spine, e.g. always-on CLAUDE.md rules). Low scores on these are silent
+  // compliance, not deadness — the scorer only sees a rule when its ID surfaces
+  // in a tool response. Withheld candidates are reported, not dropped silently.
+  const protectedSet = new Set(options.protectedRules || []);
+  const protectedSkipped = [];
 
   // Population stats from Elo ratings (if available)
   let ratingMean = 1500;
@@ -214,6 +226,9 @@ export function generateProposals(aggregated, allRoutes, propagationState = {}, 
     const avgScore = weightedAvg(data.totalWeightedScore, data.totalWeight);
     const routeAvgs = Object.entries(data.routeScores).map(([route, rd]) => ({
       route, avg: weightedAvg(rd.totalWeightedScore, rd.totalWeight),
+      // Legacy aggregates (pre per-route counting) fall back to the rule's
+      // cross-route total — the old, weaker behavior.
+      sessions: rd.sessions ?? data.sessionsInjected,
     }));
 
     const ruleRatingEntry = ratingState?.rules?.[rule];
@@ -237,23 +252,27 @@ export function generateProposals(aggregated, allRoutes, propagationState = {}, 
 
     // Demote (safety exclusions: prevented-mistake + behavioral-compliance + content-verified)
     if (!data.hasPrevented && !data.hasBehavioralCompliance) {
+      const candidates = [];
       if (useEloThresholds) {
         if (ruleRating < eloDemoteRating && ruleSessions >= MIN_SESSIONS_FOR_ELO_DECISION) {
-          for (const { route, avg } of routeAvgs) {
-            demotions.push({
+          for (const { route, avg, sessions } of routeAvgs) {
+            if (sessions < MIN_ROUTE_SESSIONS_FOR_DEMOTION) continue;
+            candidates.push({
               rule, route, avgScore: avg,
               rating: Math.round(ruleRating),
-              sessions: data.sessionsInjected,
+              sessions,
             });
           }
         }
       } else {
-        for (const { route, avg } of routeAvgs) {
-          if (avg < FALLBACK_DEMOTE_THRESHOLD && data.sessionsInjected >= 3) {
-            demotions.push({ rule, route, avgScore: avg, sessions: data.sessionsInjected });
+        for (const { route, avg, sessions } of routeAvgs) {
+          if (avg < FALLBACK_DEMOTE_THRESHOLD && sessions >= MIN_ROUTE_SESSIONS_FOR_DEMOTION) {
+            candidates.push({ rule, route, avgScore: avg, sessions });
           }
         }
       }
+      if (protectedSet.has(rule)) protectedSkipped.push(...candidates);
+      else demotions.push(...candidates);
     }
 
     // Phase 7: propagation eligibility
@@ -311,7 +330,7 @@ export function generateProposals(aggregated, allRoutes, propagationState = {}, 
   }
 
   return {
-    promotions, demotions, budgetChanges, propagations,
+    promotions, demotions, budgetChanges, propagations, protectedSkipped,
     propagationState: newPropagationState,
     usedEloThresholds: useEloThresholds,
     ratingPopulation: { mean: Math.round(ratingMean), std_dev: Math.round(ratingStdDev), count: popRatings.length },
@@ -474,6 +493,16 @@ export function formatProposals(proposals) {
       lines.push(`  Evidence: ${d.avgScore.toFixed(2)} avg across ${d.sessions ?? '?'} sessions`);
       lines.push('  Status: pending');
       lines.push(`  Proposed by: ${developer} (${today})`);
+    }
+    lines.push('');
+  }
+
+  if (proposals.protectedSkipped && proposals.protectedSkipped.length > 0) {
+    lines.push('### Demotions Withheld (protected rules)');
+    lines.push('_Below the demote threshold but listed in `protectedRules` (.harness/config.json)._');
+    lines.push('_A low score on a protected rule means silent compliance, not deadness — never apply these._');
+    for (const d of proposals.protectedSkipped) {
+      lines.push(`- ${d.rule} in ${d.route}: ${d.avgScore.toFixed(2)} avg across ${d.sessions} session(s) — NOT proposed`);
     }
     lines.push('');
   }

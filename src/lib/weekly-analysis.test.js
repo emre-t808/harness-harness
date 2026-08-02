@@ -86,6 +86,79 @@ describe('generateProposals — Elo-unified thresholds', () => {
   });
 });
 
+describe('generateProposals — demotion guardrails', () => {
+  it('requires per-route session evidence: no demotion for a route with 1 session', () => {
+    const aggregated = {
+      perRule: {
+        TARGET: {
+          totalWeightedScore: 0, totalWeight: 11,
+          sessionsInjected: 11, timesReferenced: 0,
+          routeScores: {
+            'route-a': { totalWeightedScore: 0, totalWeight: 10, sessions: 10 },
+            'route-b': { totalWeightedScore: 0, totalWeight: 1, sessions: 1 },
+          },
+          hasPrevented: false, hasBehavioralCompliance: false,
+        },
+      },
+      perRoute: {},
+    };
+    const result = generateProposals(aggregated, []);
+    assert.ok(result.demotions.some(d => d.rule === 'TARGET' && d.route === 'route-a'));
+    assert.ok(!result.demotions.some(d => d.route === 'route-b'),
+      'route with a single injected session must not receive a demotion proposal');
+  });
+
+  it('reports per-route session counts on demotions, not the cross-route total', () => {
+    const aggregated = {
+      perRule: {
+        TARGET: {
+          totalWeightedScore: 0, totalWeight: 20,
+          sessionsInjected: 20, timesReferenced: 0,
+          routeScores: {
+            'route-a': { totalWeightedScore: 0, totalWeight: 4, sessions: 4 },
+          },
+          hasPrevented: false, hasBehavioralCompliance: false,
+        },
+      },
+      perRoute: {},
+    };
+    const result = generateProposals(aggregated, []);
+    const d = result.demotions.find(x => x.rule === 'TARGET');
+    assert.equal(d.sessions, 4);
+  });
+
+  it('withholds demotions for protected rules and reports them separately', () => {
+    const aggregated = {
+      perRule: {
+        'FO-009': {
+          totalWeightedScore: 0, totalWeight: 10,
+          sessionsInjected: 10, timesReferenced: 0,
+          routeScores: {
+            'coding:meta': { totalWeightedScore: 0, totalWeight: 10, sessions: 10 },
+          },
+          hasPrevented: false, hasBehavioralCompliance: false,
+        },
+      },
+      perRoute: {},
+    };
+    const result = generateProposals(aggregated, [], {}, null, { protectedRules: ['FO-009'] });
+    assert.equal(result.demotions.length, 0);
+    assert.ok(result.protectedSkipped.some(p => p.rule === 'FO-009' && p.route === 'coding:meta'));
+  });
+
+  it('protection also blocks Elo-path demotions', () => {
+    const aggregated = {
+      perRule: { TARGET: makeRuleAggregate(0.5) },
+      perRoute: {},
+    };
+    const ratingState = richRatingState({ targetRating: 1200, targetSessions: 20 });
+    const result = generateProposals(aggregated, [], {}, ratingState, { protectedRules: ['TARGET'] });
+    assert.equal(result.usedEloThresholds, true);
+    assert.ok(!result.demotions.some(d => d.rule === 'TARGET'));
+    assert.ok(result.protectedSkipped.some(p => p.rule === 'TARGET'));
+  });
+});
+
 describe('generateProposals — propagation state tracking', () => {
   it('increments weeks_above_threshold when rating stays above mean + σ', () => {
     const aggregated = {

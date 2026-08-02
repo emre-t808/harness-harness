@@ -4,7 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { resolvePaths } from '../lib/paths.js';
+import { resolvePaths, loadProtectedRules } from '../lib/paths.js';
 import {
   findRecentSummaries, parseSummary, aggregateScores,
   generateProposals, reorderLoadIfBudget,
@@ -55,7 +55,9 @@ export async function analyze(projectDir, flags) {
   console.log(`Routes: ${allRoutes.join(', ')}`);
 
   // 4. Proposals
-  const proposals = generateProposals(aggregated, allRoutes);
+  const proposals = generateProposals(aggregated, allRoutes, {}, null, {
+    protectedRules: loadProtectedRules(paths),
+  });
   console.log(`Proposals: ${proposals.promotions.length} promotions, ${proposals.demotions.length} demotions`);
 
   // 5. Format
