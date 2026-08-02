@@ -13,7 +13,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { resolvePaths } from './paths.js';
+import { resolvePaths, loadProtectedRules } from './paths.js';
 import {
   findRecentSummaries, parseSummary, aggregateScores,
   generateProposals, reorderLoadIfBudget,
@@ -108,7 +108,9 @@ export async function runAggregation(paths) {
     saveRatingState(paths, ratingState);
   } catch (err) { logErr('rating-state-save', err); }
 
-  const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState);
+  const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState, {
+    protectedRules: loadProtectedRules(paths),
+  });
 
   // Persist updated propagation state
   try {

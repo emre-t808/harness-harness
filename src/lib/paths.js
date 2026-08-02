@@ -107,3 +107,21 @@ export function resolvePaths(projectDir) {
     manifestDir: (date) => join(claudeDir, 'traces', date),
   };
 }
+
+/**
+ * Rules the project declares off-limits to demotion proposals, from
+ * `"protectedRules": ["FO-009", ...]` in .harness/config.json. Missing or
+ * malformed config → empty list (no protection).
+ * @param {object} paths - result of resolvePaths()
+ * @returns {string[]}
+ */
+export function loadProtectedRules(paths) {
+  try {
+    const cfg = JSON.parse(readFileSync(paths.configFile, 'utf8'));
+    return Array.isArray(cfg.protectedRules)
+      ? cfg.protectedRules.filter((r) => typeof r === 'string' && r.trim())
+      : [];
+  } catch {
+    return [];
+  }
+}
