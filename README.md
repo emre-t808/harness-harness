@@ -168,8 +168,7 @@ your-project/
     │   ├── hh-assembler.js      # Smart context assembler
     │   ├── hh-trace-capture.sh  # Tool call tracer
     │   ├── hh-session-summary.js # Session analysis
-    │   ├── hh-state-nudge.sh    # State update nudges
-    │   └── hh-assembler-fallback.sh
+    │   └── hh-state-nudge.sh    # State update nudges
     └── traces/                  # Raw trace data
         └── {date}/
             ├── {session}.jsonl

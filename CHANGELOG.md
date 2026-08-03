@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Spurious "Smart Assembler did not produce output" banner (fallback race).** `assembler-fallback.sh` ran in parallel with `hh-assembler.js` on the same UserPromptSubmit event and compared the success marker's mtime against the previous prompt — racing the very process it was checking. Whenever the tiny bash check finished before the assembler rewrote the marker (or two prompts landed within `stat %m`'s 1-second resolution), it injected the fallback banner even though the assembler produced full output in the same prompt. The fallback is now built into the `hh-assembler.js` wrapper itself (single process, no marker heuristic): it emits the banner only when its own run actually failed — delegate threw or produced no output, or the native assembler could not be loaded — with the real cause in the banner and a structured `phase: error` event in `.harness/local/events.ndjson`. The separate `assembler-fallback.sh` template, its install entry, and its hook registration are gone; `init` removes a previously installed copy. Also fixed in passing: after a failed delegate run the old wrapper "fell through" to the native assembler, but the delegate had already consumed stdin, so the native path always exited silently — the wrapper now reports the failure instead of a dead retry.
+
 ## 0.5.0 (2026-05-09)
 
 ### Fixed (the headline issues)
