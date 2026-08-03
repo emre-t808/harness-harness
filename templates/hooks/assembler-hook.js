@@ -90,7 +90,9 @@ Details: .harness/local/events.ndjson (handler "hh-assembler.js", phase "error")
       logEvent('end', { reason: 'delegate assembled context', delegate });
       return true;
     } catch (err) {
-      failures.push(`delegate ${delegate} failed: ${err.message}`);
+      // execFileSync's message embeds the child's full stderr — keep the first
+      // line; the full stderr already reached this hook's stderr.
+      failures.push(`delegate ${delegate} failed: ${String(err.message).split('\n')[0]}`);
       return false;
     }
   }
