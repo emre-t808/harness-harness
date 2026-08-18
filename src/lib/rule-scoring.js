@@ -9,7 +9,9 @@ import { minimatch } from './minimatch-simple.js';
  *
  * @param {object[]} traceEvents
  * @param {object[]} injectedRules
- * @returns {{ [ruleId: string]: { score: number, evidence: string } }}
+ * @returns {{ [ruleId: string]: { score: number|null, evidence: string } }}
+ *   score null means 'not-applicable' — the rule declares signals but no
+ *   trigger fired this session; callers should exclude it from aggregation.
  */
 export function scoreRuleCompliance(traceEvents, injectedRules) {
   if (!injectedRules || injectedRules.length === 0) return {};
@@ -18,139 +20,112 @@ export function scoreRuleCompliance(traceEvents, injectedRules) {
 
   for (const rule of injectedRules) {
     const ruleId = typeof rule === 'string' ? rule : rule.id;
-    let score = 0.0;
-    let evidence = 'ignored';
+    const signals = typeof rule === 'object' && Array.isArray(rule.behavioral_signals) && rule.behavioral_signals.length > 0
+      ? rule.behavioral_signals
+      : null;
 
     const isReferenced = traceEvents.some(evt =>
       Array.isArray(evt.referenced_context) && evt.referenced_context.includes(ruleId)
     );
 
-    if (isReferenced) {
-      score = 1.0;
-      evidence = 'referenced';
-    }
-
-    const behavioralMatch = typeof rule === 'object' && rule.behavioral_signals
-      ? checkBehavioralCompliance(traceEvents, rule.behavioral_signals)
-      : false;
-
-    if (behavioralMatch) {
-      if (isReferenced) {
-        score = 1.5;
-        evidence = 'verified-compliance';
-      } else {
-        score = 0.5;
-        evidence = 'behavioral-compliance';
-      }
-    }
-
-    // Phase 8: content-verified is the strongest non-prevented-mistake evidence
-    const contentMatch = typeof rule === 'object' && rule.behavioral_signals
-      ? checkContentCompliance(traceEvents, rule.behavioral_signals)
-      : false;
-
-    if (contentMatch) {
-      if (isReferenced) {
-        score = 1.75;
-        evidence = 'content-verified';
-      } else {
-        score = 1.0;
-        evidence = 'content-verified';
-      }
-    }
-
-    for (let i = 0; i < traceEvents.length; i++) {
-      const evt = traceEvents[i];
-      const isAntiPatternRead =
-        evt.tool === 'Read' &&
-        typeof evt.input_summary === 'string' &&
-        evt.input_summary.includes('anti-pattern') &&
-        Array.isArray(evt.referenced_context) &&
-        evt.referenced_context.includes(ruleId);
-
-      if (!isAntiPatternRead) continue;
-
-      const window = traceEvents.slice(i + 1, i + 4);
-      if (window.some(e => e.tool === 'Edit' || e.tool === 'Write')) {
-        score = 2.0;
-        evidence = 'prevented-mistake';
-        break;
-      }
-    }
-
-    result[ruleId] = { score, evidence };
+    const sig = evaluateSignals(traceEvents, signals);
+    const prevented = detectPreventedMistake(traceEvents, ruleId);
+    result[ruleId] = assembleScore(sig, isReferenced, !!signals, prevented);
   }
 
   return result;
 }
 
-function checkBehavioralCompliance(traceEvents, signals) {
-  if (!Array.isArray(signals) || signals.length === 0) return false;
+/**
+ * Evaluate all behavioral_signals for one rule against the session's events.
+ * Returns which outcome classes any signal produced:
+ *   fired      — at least one signal's trigger matched (the rule was applicable)
+ *   violated   — an expect.absent trigger fired, or a file_not_modified guard was breached
+ *   behavioral — a present / sibling / preceded_by_read / file_not_modified expectation was met
+ *   content    — a content_includes expectation was met
+ */
+function evaluateSignals(traceEvents, signals) {
+  const out = { fired: false, violated: false, behavioral: false, content: false };
+  if (!signals) return out;
 
   for (const signal of signals) {
-    if (signalMatches(traceEvents, signal)) return true;
+    const { trigger, expect } = signal || {};
+    if (!trigger || !expect) continue;
+
+    const triggerEvents = filterTriggerEvents(traceEvents, trigger);
+    if (triggerEvents.length === 0) continue;
+    out.fired = true;
+
+    if (expect.absent) {
+      out.violated = true;
+    } else if (expect.present) {
+      out.behavioral = true;
+    } else if (expect.applicable_only) {
+      // Trigger marks applicability only; no expectation to meet.
+    } else if (expect.content_includes) {
+      if (checkContentIncludes(triggerEvents, expect.content_includes)) out.content = true;
+    } else if (expect.sibling_file_touched) {
+      if (checkSiblingFileTouched(traceEvents, triggerEvents, expect.sibling_file_touched)) out.behavioral = true;
+    } else if (expect.preceded_by_read) {
+      if (checkPrecededByRead(traceEvents, triggerEvents, expect.preceded_by_read)) out.behavioral = true;
+    } else if (expect.file_not_modified) {
+      if (checkFileNotModified(traceEvents, expect.file_not_modified)) out.behavioral = true;
+      else out.violated = true;
+    }
   }
-  return false;
+
+  return out;
 }
 
-function signalMatches(traceEvents, signal) {
-  const { trigger, expect } = signal;
-  if (!trigger || !expect) return false;
-
-  const triggerEvents = traceEvents.filter(evt => {
-    if (trigger.tool && Array.isArray(trigger.tool)) {
-      if (!trigger.tool.includes(evt.tool)) return false;
+function filterTriggerEvents(traceEvents, trigger) {
+  return traceEvents.filter(evt => {
+    if (trigger.tool && Array.isArray(trigger.tool) && !trigger.tool.includes(evt.tool)) return false;
+    if (trigger.tool_glob && !minimatch(evt.tool || '', trigger.tool_glob)) return false;
+    if (trigger.input_regex) {
+      let re;
+      try { re = new RegExp(trigger.input_regex); } catch { return false; }
+      if (!re.test(evt.input_summary || '')) return false;
     }
-
     if (trigger.file_glob) {
       const files = evt.files_touched || [];
       if (!files.some(f => minimatch(f, trigger.file_glob))) return false;
     }
-
     return true;
   });
-
-  if (triggerEvents.length === 0) return false;
-
-  if (expect.sibling_file_touched) {
-    return checkSiblingFileTouched(traceEvents, triggerEvents, expect.sibling_file_touched);
-  }
-
-  if (expect.preceded_by_read) {
-    return checkPrecededByRead(traceEvents, triggerEvents, expect.preceded_by_read);
-  }
-
-  if (expect.file_not_modified) {
-    return checkFileNotModified(traceEvents, expect.file_not_modified);
-  }
-
-  // Phase 8: content_includes is handled separately in checkContentCompliance()
-  // Return false here so content-only signals don't double-score via behavioral path.
-  return false;
 }
 
 /**
- * Phase 8: Check whether any behavioral_signal with expect.content_includes
- * matched (i.e., a trigger Edit/Write event contains the required regex in
- * its response_snippet).
+ * Session-level evidence hierarchy, first match wins. `violated` trumps all
+ * positives — behavioral truth beats citation. A rule WITH signals whose
+ * triggers never fired scores null ('not-applicable'): it is excluded from
+ * aggregation rather than logged as a false-negative 0.
  */
-function checkContentCompliance(traceEvents, signals) {
-  if (!Array.isArray(signals) || signals.length === 0) return false;
-  for (const signal of signals) {
-    const { trigger, expect } = signal;
-    if (!trigger || !expect || !expect.content_includes) continue;
+function assembleScore(sig, isReferenced, hasSignals, prevented) {
+  if (sig.violated) return { score: 0.0, evidence: 'violated' };
+  if (prevented) return { score: 2.0, evidence: 'prevented-mistake' };
+  if (sig.content) return { score: isReferenced ? 1.75 : 1.0, evidence: 'content-verified' };
+  if (sig.behavioral && isReferenced) return { score: 1.5, evidence: 'verified-compliance' };
+  if (isReferenced) return { score: 1.0, evidence: 'referenced' };
+  if (sig.behavioral) return { score: 0.5, evidence: 'behavioral-compliance' };
+  if (sig.fired) return { score: 0.0, evidence: 'applicable-unmet' };
+  if (hasSignals) return { score: null, evidence: 'not-applicable' };
+  return { score: 0.0, evidence: 'ignored' };
+}
 
-    const triggerEvents = traceEvents.filter(evt => {
-      if (trigger.tool && Array.isArray(trigger.tool) && !trigger.tool.includes(evt.tool)) return false;
-      if (trigger.file_glob) {
-        const files = evt.files_touched || [];
-        if (!files.some(f => minimatch(f, trigger.file_glob))) return false;
-      }
-      return true;
-    });
+function detectPreventedMistake(traceEvents, ruleId) {
+  for (let i = 0; i < traceEvents.length; i++) {
+    const evt = traceEvents[i];
+    const isAntiPatternRead =
+      evt.tool === 'Read' &&
+      typeof evt.input_summary === 'string' &&
+      evt.input_summary.includes('anti-pattern') &&
+      Array.isArray(evt.referenced_context) &&
+      evt.referenced_context.includes(ruleId);
 
-    if (triggerEvents.length === 0) continue;
-    if (checkContentIncludes(triggerEvents, expect.content_includes)) return true;
+    if (!isAntiPatternRead) continue;
+
+    const window = traceEvents.slice(i + 1, i + 4);
+    if (window.some(e => e.tool === 'Edit' || e.tool === 'Write')) return true;
   }
   return false;
 }
