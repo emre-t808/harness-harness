@@ -232,6 +232,142 @@ describe('rule-registry — invalid content_includes regex', () => {
   });
 });
 
+describe('scoreRuleCompliance — applicability (not-applicable vs applicable-unmet)', () => {
+  it('scores null / not-applicable when rule has signals but no trigger fired', () => {
+    // Session touched no code files → a code-style rule was never applicable.
+    // Old behavior scored this 0.0/ignored, feeding false negatives to Elo.
+    const events = [
+      { tool: 'Read', referenced_context: [], files_touched: ['docs/x.md'] },
+    ];
+    const rules = [{
+      id: 'CS-001',
+      text: 'Functions under 40 lines',
+      behavioral_signals: [
+        { trigger: { tool: ['Write', 'Edit'], file_glob: '**/*.{js,ts,py,sh}' }, expect: { applicable_only: true } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['CS-001'].score, null);
+    assert.equal(scores['CS-001'].evidence, 'not-applicable');
+  });
+
+  it('scores 0.0 / applicable-unmet when applicable_only trigger fires', () => {
+    const events = [
+      { tool: 'Write', referenced_context: [], files_touched: ['scripts/foo.js'] },
+    ];
+    const rules = [{
+      id: 'CS-001',
+      text: 'Functions under 40 lines',
+      behavioral_signals: [
+        { trigger: { tool: ['Write', 'Edit'], file_glob: '**/*.{js,ts,py,sh}' }, expect: { applicable_only: true } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['CS-001'].score, 0.0);
+    assert.equal(scores['CS-001'].evidence, 'applicable-unmet');
+  });
+
+  it('labels unmet content_includes as applicable-unmet, not ignored', () => {
+    const events = [
+      {
+        tool: 'Write',
+        files_touched: ['reports/sf/x.md'],
+        response_snippet: Buffer.from('no statement here', 'utf8').toString('base64'),
+        referenced_context: [],
+      },
+    ];
+    const rules = [{
+      id: 'DQ-001',
+      text: 'Reports carry a Data Quality Statement',
+      behavioral_signals: [
+        { trigger: { tool: ['Write'], file_glob: 'reports/**' }, expect: { content_includes: 'Data Quality Statement' } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['DQ-001'].score, 0.0);
+    assert.equal(scores['DQ-001'].evidence, 'applicable-unmet');
+  });
+});
+
+describe('scoreRuleCompliance — expect.absent / expect.present', () => {
+  it('scores 0.0 / violated when an absent-trigger fires (tool_glob)', () => {
+    const events = [
+      { tool: 'mcp__claude_ai_Google_Drive__search_files', referenced_context: [], files_touched: [] },
+    ];
+    const rules = [{
+      id: 'GA-001',
+      text: 'Google via integrations/, never MCP',
+      behavioral_signals: [
+        { trigger: { tool_glob: 'mcp__*{Google,google,Gmail,gmail}*' }, expect: { absent: true } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['GA-001'].score, 0.0);
+    assert.equal(scores['GA-001'].evidence, 'violated');
+  });
+
+  it('scores 0.5 / behavioral-compliance when a present-trigger fires (input_regex)', () => {
+    const events = [
+      { tool: 'Bash', input_summary: 'gws gmail messages list --max 5', referenced_context: [], files_touched: [] },
+    ];
+    const rules = [{
+      id: 'GA-001',
+      text: 'Google via integrations/, never MCP',
+      behavioral_signals: [
+        { trigger: { tool: ['Bash'], input_regex: '\\bgws\\b' }, expect: { present: true } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['GA-001'].score, 0.5);
+    assert.equal(scores['GA-001'].evidence, 'behavioral-compliance');
+  });
+
+  it('violated trumps referenced and a matching present signal', () => {
+    const events = [
+      { tool: 'Write', referenced_context: ['FO-009'], files_touched: ['stray.md'] },
+      { tool: 'Write', referenced_context: [], files_touched: ['reports/ok.md'] },
+    ];
+    const rules = [{
+      id: 'FO-009',
+      text: 'Never create files in root',
+      behavioral_signals: [
+        { trigger: { tool: ['Write'], file_glob: '*.*' }, expect: { absent: true } },
+        { trigger: { tool: ['Write', 'Edit'], file_glob: 'reports/**' }, expect: { present: true } },
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['FO-009'].score, 0.0);
+    assert.equal(scores['FO-009'].evidence, 'violated');
+  });
+
+  it('absent signal with no trigger events → not-applicable', () => {
+    const events = [
+      { tool: 'Read', referenced_context: [], files_touched: ['docs/x.md'] },
+    ];
+    const rules = [{
+      id: 'GA-001',
+      text: 'Google via integrations/, never MCP',
+      behavioral_signals: [
+        { trigger: { tool_glob: 'mcp__*{Google,google,Gmail,gmail}*' }, expect: { absent: true } }
+      ]
+    }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.equal(scores['GA-001'].score, null);
+    assert.equal(scores['GA-001'].evidence, 'not-applicable');
+  });
+
+  it('string-form rules keep legacy referenced/ignored semantics', () => {
+    const events = [
+      { tool: 'Read', referenced_context: ['WS-008'], files_touched: [] },
+    ];
+    const scores = scoreRuleCompliance(events, ['WS-008', 'CM-010']);
+    assert.equal(scores['WS-008'].score, 1.0);
+    assert.equal(scores['WS-008'].evidence, 'referenced');
+    assert.equal(scores['CM-010'].score, 0.0);
+    assert.equal(scores['CM-010'].evidence, 'ignored');
+  });
+});
+
 describe('scoreRuleCompliance — file_not_modified signal', () => {
   it('scores 0.5 when forbidden files are not touched', () => {
     const events = [
@@ -265,5 +401,7 @@ describe('scoreRuleCompliance — file_not_modified signal', () => {
 
     const scores = scoreRuleCompliance(events, rules);
     assert.equal(scores['GEN-001'].score, 0.0);
+    // Breaching a file_not_modified guard is a violation, not mere absence of signal.
+    assert.equal(scores['GEN-001'].evidence, 'violated');
   });
 });
