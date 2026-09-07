@@ -93,21 +93,32 @@ fi
 SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
 POINTER_MODE=$(printf '%s\n' "$PARSED" | sed -n '2p')
 
+# Collision-free client/session storage key (PRD §5.1). The client is baked in
+# by the installer ({{HH_CLIENT}}) or supplied via HH_CLIENT; an unrendered
+# template or unknown client falls back to the legacy unprefixed layout.
+CLIENT="${HH_CLIENT:-{{HH_CLIENT}}}"
+case "$CLIENT" in
+  claude|codex) STORAGE_KEY="${CLIENT}--${SESSION}" ;;
+  *) CLIENT=""; STORAGE_KEY="$SESSION" ;;
+esac
+
 TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
-# Filename matches existing manifest convention: ${session_id}.jsonl ↔ ${session_id}-manifest.json.
+# Filename matches existing manifest convention: ${storage_key}.jsonl ↔ ${storage_key}-manifest.json.
 # Note: session_id values already include the "session-" prefix from Claude Code's hook payload,
 # so we don't add another. When SESSION="unknown", the file is "unknown.jsonl" (legacy-compatible).
-TRACE_FILE="${TRACE_DIR}/${SESSION}.jsonl"
+TRACE_FILE="${TRACE_DIR}/${STORAGE_KEY}.jsonl"
 
 mkdir -p "$TRACE_DIR"
 
-python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" "$POINTER_MODE" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
+python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" "$POINTER_MODE" "$STORAGE_KEY" "$CLIENT" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
 import base64, json, os, re, sys, datetime
 
 stdin_file = sys.argv[1] if len(sys.argv) > 1 else None
 env_session = sys.argv[2] if len(sys.argv) > 2 else None
 base_dir = (sys.argv[3] + "/") if len(sys.argv) > 3 else ""
 use_legacy_pointer = len(sys.argv) > 4 and sys.argv[4] == 'legacy'
+storage_key = (sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None) or env_session
+client = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None
 
 # Phase 8: response_snippet config (default: enabled)
 SNIPPET_CAP_BYTES = 2048
@@ -184,21 +195,23 @@ def normalize_rule_ids(rules):
             return []
     return normalized
 
-def load_known_rule_ids(session, legacy_pointer):
-    """Read rule IDs from the current session manifest."""
+def load_known_rule_ids(session, key, legacy_pointer):
+    """Read rule IDs from the current session manifest (storage-key pointer)."""
     cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
         os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
     if legacy_pointer:
         manifest_pointer = os.path.join(cache_dir, 'current-manifest-path')
     else:
         manifest_pointer = os.path.join(
-            cache_dir, 'manifest-pointers', f'{session}.path')
+            cache_dir, 'manifest-pointers', f'{key}.path')
     try:
         with open(manifest_pointer, 'r') as f:
             manifest_path = f.read().strip()
         with open(manifest_path, 'r') as f:
             manifest = json.loads(f.read())
-        if manifest.get('session') != session:
+        # New manifests carry the storage key in `session`; legacy manifests
+        # carry the raw session id. Either identifies this session.
+        if manifest.get('session') not in (key, session):
             return []
         return normalize_rule_ids(manifest.get('rules_injected', []))
     except Exception:
@@ -216,10 +229,12 @@ event = {
     "output_size": len(tool_response),
     "duration_ms": None,
     "referenced_context": extract_referenced_rules(
-        tool_response, load_known_rule_ids(session_id, use_legacy_pointer)),
+        tool_response, load_known_rule_ids(session_id, storage_key, use_legacy_pointer)),
     "files_touched": files_touched,
     "outcome": bash_outcome(tool_response) if tool_name == "Bash" else None,
 }
+if client:
+    event["client"] = client
 
 # Phase 8: response_snippet for Edit/Write (first 2KB, base64-encoded)
 if tool_name in ("Edit", "Write") and snippet_enabled():

@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateProposals } from './weekly-analysis.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { classifySummaryArtifact, findSummaryArtifacts, generateProposals } from './weekly-analysis.js';
 
 function makeRuleAggregate(score, sessionsInjected = 10) {
   return {
@@ -180,5 +183,51 @@ describe('generateProposals — propagation state tracking', () => {
     const prevState = { rules: { TARGET: { weeks_above_threshold: 5 } } };
     const result = generateProposals(aggregated, [], prevState, ratingState);
     assert.equal(result.propagationState.TARGET.weeks_above_threshold, 4);
+  });
+});
+
+describe('summary artifact classification (T2)', () => {
+  const NOW = new Date('2026-09-07T12:00:00Z');
+
+  function tempTraces() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-artifacts-'));
+    fs.mkdirSync(path.join(dir, '2026-09-06'), { recursive: true });
+    return dir;
+  }
+
+  it('prefers the JSON sidecar and never double-counts its markdown companion', () => {
+    const tracesDir = tempTraces();
+    const md = path.join(tracesDir, '2026-09-06', 'claude--s1-summary.md');
+    fs.writeFileSync(md, '**Route:** general\n\n### Effectiveness Scores\n\n| Context | Score | Evidence |\n|---|---|---|\n| TR-001 | 1.0 | referenced |\n');
+    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'claude--s1-summary.json'), JSON.stringify({
+      schemaVersion: 2, client: 'claude', sessionId: 's1', storageKey: 'claude--s1',
+      startedAt: '2026-09-06T10:00:00Z', lastEventAt: '2026-09-06T11:00:00Z',
+      route: 'general', scorerVersion: 'behavioral-v2',
+      signalsHash: 'x'.repeat(64), sourceHash: 'y'.repeat(64),
+      measurementStatus: 'valid', degradedReasons: [],
+      scores: [{ rule: 'TR-001', score: 0.5, evidence: 'behavioral-compliance' }],
+    }));
+
+    const artifacts = findSummaryArtifacts(7, { tracesDir });
+    assert.equal(artifacts.length, 1);
+    const classified = classifySummaryArtifact(artifacts[0], { now: NOW });
+    assert.equal(classified.kind, 'v2');
+    assert.equal(classified.record.scores[0].evidence, 'behavioral-compliance');
+    fs.rmSync(tracesDir, { recursive: true, force: true });
+  });
+
+  it('classifies legacy markdown separately and invalid sidecars as invalid-v2', () => {
+    const tracesDir = tempTraces();
+    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'old-summary.md'),
+      '**Route:** general\n\n### Effectiveness Scores\n\n| Context | Score | Evidence |\n|---|---|---|\n| TR-001 | 1.0 | referenced |\n');
+    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'bad-summary.md'), 'no table');
+    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'bad-summary.json'), '{not-json');
+
+    const artifacts = findSummaryArtifacts(7, { tracesDir });
+    const byKey = Object.fromEntries(artifacts.map((a) => [path.basename(a.key), classifySummaryArtifact(a, { now: NOW })]));
+    assert.equal(byKey.old.kind, 'legacy');
+    assert.equal(byKey.old.parsed.route, 'general');
+    assert.equal(byKey.bad.kind, 'invalid-v2');
+    fs.rmSync(tracesDir, { recursive: true, force: true });
   });
 });
