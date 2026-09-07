@@ -30,7 +30,7 @@ export function expectedScore(selfRating, opponentRating) {
   return 1 / (1 + Math.pow(10, (opponentRating - selfRating) / 400));
 }
 
-export function updateRating(entry, matchScore, poolMean) {
+export function updateRating(entry, matchScore, poolMean, asOf) {
   const current = entry || { rating: STARTING_RATING, sessions_injected: 0 };
   const sessions = current.sessions_injected || 0;
   const k = sessions < COLD_START_SESSIONS ? K_FACTOR_COLD : K_FACTOR_STABLE;
@@ -41,11 +41,13 @@ export function updateRating(entry, matchScore, poolMean) {
   return {
     rating: Math.round(newRating * 10) / 10,
     sessions_injected: sessions + 1,
-    last_updated: new Date().toISOString().slice(0, 10),
+    // Deterministic replay (T3) passes the observation's own event date so
+    // rebuilding identical evidence yields byte-identical state.
+    last_updated: asOf ?? new Date().toISOString().slice(0, 10),
   };
 }
 
-export function processSession(state, sessionScores) {
+export function processSession(state, sessionScores, { asOf } = {}) {
   if (!sessionScores || sessionScores.length === 0) return state;
 
   const rules = { ...(state.rules || {}) };
@@ -59,7 +61,7 @@ export function processSession(state, sessionScores) {
   for (const { ruleId, evidence } of sessionScores) {
     const matchScore = evidenceToMatchScore(evidence);
     const prev = rules[ruleId];
-    rules[ruleId] = updateRating(prev, matchScore, poolMean);
+    rules[ruleId] = updateRating(prev, matchScore, poolMean, asOf);
   }
 
   return { ...state, rules };

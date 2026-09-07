@@ -36,6 +36,48 @@ function recoverStaleLock(lockPath) {
   return false;
 }
 
+function lockOwnerAlive(lockPath) {
+  try {
+    const pid = parseInt(fs.readFileSync(lockPath, 'utf8').split('\n')[0], 10);
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Async-safe lock: held for the FULL lifetime of an async callback (the sync
+ * helper releases as soon as fn returns a pending promise — never pass it an
+ * async fn). A lock is stolen only when it is old AND its recorded owner pid
+ * is dead: a merely slow, still-owned lock is never treated as stale.
+ */
+export async function withFileLockAsync(filePath, fn, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const lockPath = filePath + '.lock';
+  const start = Date.now();
+
+  while (!tryAcquireLock(lockPath)) {
+    try {
+      const lockAge = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (lockAge > STALE_LOCK_AGE_MS && !lockOwnerAlive(lockPath)) {
+        fs.unlinkSync(lockPath);
+        continue;
+      }
+    } catch { /* lock vanished — retry */ }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Lock timeout: ${lockPath}`);
+    }
+    await new Promise((resolveWait) => { setTimeout(resolveWait, POLL_INTERVAL_MS); });
+  }
+
+  try {
+    return await fn();
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch { /* already cleaned */ }
+  }
+}
+
 export function withFileLock(filePath, fn, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const lockPath = filePath + '.lock';
   const start = Date.now();

@@ -92,8 +92,25 @@ fi
 SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
 SOURCE=$(printf '%s\n' "$PARSED" | sed -n '2p')
 
-# Create session directory if it doesn't exist
-SESSION_DIR="${SESSIONS_DIR}/${SESSION}"
+# Collision-free client/session storage key (PRD §5.3). Unrendered template
+# or unknown client → legacy unprefixed layout, unchanged.
+CLIENT="${HH_CLIENT:-{{HH_CLIENT}}}"
+case "$CLIENT" in
+  claude|codex) STORAGE_KEY="${CLIENT}--${SESSION}" ;;
+  *) CLIENT=""; STORAGE_KEY="$SESSION" ;;
+esac
+
+# Storage-key directory wins; an unprefixed legacy directory is used only
+# when no other client claims the same raw id (restore, never merge).
+SESSION_DIR="${SESSIONS_DIR}/${STORAGE_KEY}"
+if [ ! -d "$SESSION_DIR" ] && [ "$STORAGE_KEY" != "$SESSION" ] && [ -d "${SESSIONS_DIR}/${SESSION}" ]; then
+  CONFLICT=""
+  for other in claude codex; do
+    [ "$other" = "$CLIENT" ] && continue
+    [ -d "${SESSIONS_DIR}/${other}--${SESSION}" ] && CONFLICT="yes"
+  done
+  [ -z "$CONFLICT" ] && SESSION_DIR="${SESSIONS_DIR}/${SESSION}"
+fi
 if [ ! -d "$SESSION_DIR" ]; then
   mkdir -p "$SESSION_DIR"
   cat > "${SESSION_DIR}/state.md" <<STATEEOF
@@ -153,8 +170,20 @@ if [ "$SOURCE" = "resume" ] || [ "$SOURCE" = "compact" ]; then
   fi
 fi
 
-# Active work status
-WORK_STATUS="${HARNESS_DIR}/memory/work-status.md"
+# Active work status (configured location; package default preserved)
+WORK_STATUS_REL=$(python3 - "$PROJECT_DIR" <<'PYEOF'
+import json, os, sys
+cfg = {}
+try:
+    with open(os.path.join(sys.argv[1], '.harness', 'config.json'), encoding='utf-8') as f:
+        cfg = json.load(f)
+except Exception:
+    pass
+ws = cfg.get('workStatusFile') if isinstance(cfg.get('workStatusFile'), str) else ''
+print(ws or '.harness/memory/work-status.md')
+PYEOF
+)
+WORK_STATUS="${PROJECT_DIR}/${WORK_STATUS_REL}"
 if [ -f "$WORK_STATUS" ]; then
   ACTIVE=$(sed -n '/## Active Work/,/^## /p' "$WORK_STATUS" | head -20)
   if [ -n "$ACTIVE" ]; then

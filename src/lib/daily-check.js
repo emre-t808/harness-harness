@@ -19,6 +19,7 @@ import {
   generateProposals, reorderLoadIfBudget,
   loadPreviousUtilization,
   formatEffectivenessReport, formatProposals,
+  findSummaryArtifacts, classifySummaryArtifact,
 } from './weekly-analysis.js';
 import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
 import { withFileLock } from './file-lock.js';
@@ -64,6 +65,67 @@ export function writeNotification(notificationsFile, proposalCount, sessionCount
 }
 
 /**
+ * Ingest v2 summary sidecars into the canonical evidence store and rebuild
+ * ratings from replay. The evidence store write is the commit point: a crash
+ * before the ratings write is recovered by the next invocation's rebuild.
+ * HH_EVIDENCE_CRASH_AFTER_COMMIT=1 injects that crash for recovery tests.
+ */
+export async function runEvidencePipeline(paths, logEvent) {
+  const evidence = await import('./evidence-state.js');
+  const { evaluateStability } = await import('./rule-stability.js');
+  const { withFileLockAsync } = await import('./file-lock.js');
+  return withFileLockAsync(paths.evidenceStateFile, async () => {
+    let store = evidence.loadEvidenceState(paths);
+    for (const artifact of findSummaryArtifacts(ANALYSIS_WINDOW_DAYS, paths)) {
+      const classified = classifySummaryArtifact(artifact);
+      if (classified.kind === 'legacy' || classified.kind === 'unparseable') continue;
+      const result = evidence.upsertObservation(store, classified.record ?? {}, {});
+      store = result.store;
+      if (result.outcome !== 'accepted' && result.outcome !== 'replaced' && result.outcome !== 'no-op') {
+        logEvent(paths.eventsLogFile, {
+          hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+          decision: { action: `evidence-${result.outcome}`, artifact: artifact.key, reason: result.reason },
+        });
+      }
+    }
+    evidence.saveEvidenceState(paths, store);
+    if (process.env.HH_EVIDENCE_CRASH_AFTER_COMMIT === '1') {
+      throw new Error('injected crash after evidence commit');
+    }
+    const ratingState = evidence.rebuildRatings(store);
+    evidence.saveRatingStateV2(paths, ratingState);
+    // T4: calendar-week stability, same generation as the ratings it gates.
+    const stability = evaluateStability(store, {});
+    fs.writeFileSync(`${paths.stabilityStateFile}.${process.pid}.tmp`, `${JSON.stringify(stability, null, 2)}\n`, 'utf8');
+    fs.renameSync(`${paths.stabilityStateFile}.${process.pid}.tmp`, paths.stabilityStateFile);
+    return { ratingState, store, stability };
+  });
+}
+
+/**
+ * Apply-mode readiness (§11): a migrated store plus a structurally valid
+ * reliability-readiness.json whose epoch and scorer match. Full observation
+ * revalidation lives in the contract check; missing/stale state withholds.
+ */
+export function checkApplyReadiness(paths, store) {
+  const reasons = [];
+  if (!store) reasons.push('not-migrated: evidence store absent');
+  if (!fs.existsSync(paths.reliabilityReadinessFile)) {
+    reasons.push('missing reliability-readiness.json');
+  } else {
+    try {
+      const readiness = JSON.parse(fs.readFileSync(paths.reliabilityReadinessFile, 'utf8'));
+      if (readiness.schemaVersion !== 2) reasons.push(`readiness schemaVersion ${readiness.schemaVersion} unsupported`);
+      if (store && readiness.evidenceEpoch !== store.epoch.startedAt) reasons.push('readiness epoch does not match evidence store');
+      if (readiness.scorerVersion !== 'behavioral-v2') reasons.push(`readiness scorerVersion ${readiness.scorerVersion} unsupported`);
+    } catch (err) {
+      reasons.push(`readiness unreadable: ${err.message}`);
+    }
+  }
+  return { ok: reasons.length === 0, reasons };
+}
+
+/**
  * Run the full aggregation + proposal + cleanup pipeline.
  * Called only when the check determines it's due.
  */
@@ -99,13 +161,27 @@ export async function runAggregation(paths) {
 
   logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'start', inputs: { window_days: ANALYSIS_WINDOW_DAYS, sessions_found: parsed.length } });
 
-  // Phase 7: Update Elo ratings BEFORE generating proposals
+  // T3: canonical evidence pipeline. A migrated project (evidence-state.json
+  // present) ingests v2 sidecars under a held-through-async lock and REBUILDS
+  // ratings deterministically — repeated windows, duplicate companions and
+  // duplicate Stop events cannot add observations. Report windows above stay
+  // distinct from this cumulative rating history. Unmigrated projects keep
+  // the legacy incremental path unchanged.
   let ratingState = { rules: {} };
+  let evidenceStore = null;
+  let stability = null;
   try {
-    const { updateRatingsFromAggregation, loadRatingState, saveRatingState } = await import('./rule-rating.js');
-    const priorRatingState = loadRatingState(paths);
-    ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
-    saveRatingState(paths, ratingState);
+    if (fs.existsSync(paths.evidenceStateFile)) {
+      const pipeline = await runEvidencePipeline(paths, logEvent);
+      ratingState = pipeline.ratingState;
+      evidenceStore = pipeline.store;
+      stability = pipeline.stability;
+    } else {
+      const { updateRatingsFromAggregation, loadRatingState, saveRatingState } = await import('./rule-rating.js');
+      const priorRatingState = loadRatingState(paths);
+      ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
+      saveRatingState(paths, ratingState);
+    }
   } catch (err) { logErr('rating-state-save', err); }
 
   const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState, {
@@ -124,14 +200,23 @@ export async function runAggregation(paths) {
     }
   } catch (err) { logErr('propagation-state-save', err); }
 
-  // Phase 9: Autonomous promotion / demotion (Finding 4)
+  // Phase 9 + T4: Autonomous promotion / demotion behind the shadow gate.
+  // `autonomy.enabled: false` disables autonomy outright; with it enabled,
+  // route mutation additionally requires explicit `autonomy.mode: "apply"` —
+  // any other value (including absence, the v2-transition default) is shadow:
+  // every gate is evaluated and logged, nothing is written.
   let autonomousChanges = 0;
+  let effectiveMode = 'off';
+  let readiness = { ok: false, reasons: ['not-evaluated'] };
   try {
     let cfg = {};
     try { cfg = JSON.parse(fs.readFileSync(paths.configFile, 'utf8')); } catch { /* default */ }
-    const autonomy = cfg.autonomy ?? { enabled: true }; // 0.5.0+: on by default
+    const autonomy = cfg.autonomy ?? { enabled: true };
+    effectiveMode = autonomy.enabled === false ? 'off'
+      : autonomy.mode === 'apply' ? 'apply' : 'shadow';
+    readiness = checkApplyReadiness(paths, evidenceStore);
 
-    if (autonomy.enabled) {
+    if (effectiveMode !== 'off') {
       const { shouldAutoApply } = await import('./autonomy.js');
       const { saveRevert } = await import('./revert.js');
       const { applyPromotion, applyDemotion } = await import('./apply-overrides.js');
@@ -146,15 +231,20 @@ export async function runAggregation(paths) {
 
       for (const proposal of allProposals) {
         const decision = shouldAutoApply(proposal, ratingState, cooldown, {
-          mode: autonomy.enabled ? 'on' : 'off',
+          mode: effectiveMode,
           autoDemote: autonomy.autoDemote === true, // opt-in; see autonomy.js gate 4
+          stability,
+          readiness: effectiveMode === 'apply' ? readiness : undefined,
         });
         const eventId = `auto_${Date.now()}_${proposal.rule}`;
 
         if (!decision.apply) {
           logEvent(paths.eventsLogFile, {
             hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
-            decision: { action: 'skip-apply', kind: proposal.kind, rule: proposal.rule, reason: decision.reason },
+            decision: {
+              action: 'skip-apply', kind: proposal.kind, rule: proposal.rule,
+              reason: decision.reason, wouldApply: decision.wouldApply ?? false, mode: effectiveMode,
+            },
           });
           continue;
         }
@@ -248,8 +338,10 @@ export async function runAggregation(paths) {
     });
   }
 
-  // Auto-reorder route configs
+  // Auto-reorder route configs. T4: this too is a route mutation — shadow
+  // mode (and anything short of ready apply mode) only PROPOSES the reorder.
   let reorderedCount = 0;
+  let reorderProposals = 0;
   if (fs.existsSync(paths.routesDir)) {
     const fileScores = {};
     for (const [rule, data] of Object.entries(aggregated.perRule)) {
@@ -257,13 +349,21 @@ export async function runAggregation(paths) {
       fileScores[rule] = avg;
     }
 
+    const canMutateRoutes = effectiveMode === 'apply' && readiness.ok;
     const routeConfigs = fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'));
     for (const rc of routeConfigs) {
       const rcPath = path.join(paths.routesDir, rc);
       const result = reorderLoadIfBudget(rcPath, fileScores);
-      if (result.changed) {
+      if (!result.changed) continue;
+      if (canMutateRoutes) {
         fs.writeFileSync(rcPath, result.updated, 'utf8');
         reorderedCount++;
+      } else {
+        reorderProposals++;
+        logEvent(paths.eventsLogFile, {
+          hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+          decision: { action: 'propose-reorder', route: rc, mode: effectiveMode, reason: 'route mutation suppressed outside ready apply mode' },
+        });
       }
     }
   }
@@ -283,6 +383,20 @@ export async function runAggregation(paths) {
   // Notification
   const totalProposals = proposals.promotions.length + proposals.demotions.length + proposals.budgetChanges.length;
   writeNotification(paths.localNotificationsFile || paths.notificationsFile, totalProposals, parsed.length);
+
+  // T4: three completed evidence weeks with no qualifying rule is a policy
+  // review signal, not a broken-loop alarm. Surface it with the population.
+  if (stability?.thresholdReview?.recommended) {
+    try {
+      const pop = stability.thresholdReview.population;
+      const reasons = Object.entries(stability.rules)
+        .map(([rule, s]) => `${rule}: ${s.latestReason} (${s.consecutiveQualifiedWeeks}w)`).join(', ');
+      const notifFile = paths.localNotificationsFile || paths.notificationsFile;
+      fs.appendFileSync(notifFile,
+        `- threshold-review-recommended: ${stability.thresholdReview.evidenceWeeks} evidence weeks, no qualifying rule. `
+        + `Population n=${pop.count} mean=${pop.mean} σ=${pop.std_dev}. Withheld: ${reasons}\n`, 'utf8');
+    } catch (err) { logErr('threshold-review', err); }
+  }
 
   // Piggyback: update federated index (best-effort)
   try {
@@ -340,6 +454,9 @@ export async function runAggregation(paths) {
     routes: allRoutes,
     proposals: totalProposals,
     reordered: reorderedCount,
+    reorderProposals,
+    autonomyMode: effectiveMode,
+    thresholdReviewRecommended: stability?.thresholdReview?.recommended === true,
     autonomousChanges,
     tracesCleaned: cleanupResult.deletedFiles,
     staleSources,

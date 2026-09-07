@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { resolvePaths } from './paths.js';
+import { validateSummaryV2 } from './session-summary.js';
 
 // Thresholds
 // Phase 8: absolute constants are now fallbacks; primary decisions are Elo-anchored.
@@ -99,6 +100,42 @@ export function findRecentSummaries(days, paths) {
   }
 
   return summaries.sort();
+}
+
+/**
+ * Discover summary artifacts pairing each Markdown summary with its v2 JSON
+ * sidecar when one exists. Returns [{ key, mdPath, jsonPath }] sorted by path.
+ */
+export function findSummaryArtifacts(days, paths) {
+  const artifacts = new Map();
+  for (const mdPath of findRecentSummaries(days, paths)) {
+    const key = mdPath.replace(/-summary\.md$/, '');
+    const jsonPath = `${key}-summary.json`;
+    artifacts.set(key, { key, mdPath, jsonPath: fs.existsSync(jsonPath) ? jsonPath : null });
+  }
+  return [...artifacts.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * Classify one artifact: JSON sidecar preferred (validated v2), legacy
+ * Markdown classified separately, never both as separate samples.
+ * @returns {{ kind: 'v2'|'invalid-v2'|'legacy'|'unparseable', record?, parsed?, reasons? }}
+ */
+export function classifySummaryArtifact(artifact, { now = new Date() } = {}) {
+  if (artifact.jsonPath) {
+    let record;
+    try {
+      record = JSON.parse(fs.readFileSync(artifact.jsonPath, 'utf8'));
+    } catch (err) {
+      return { kind: 'invalid-v2', reasons: [`json-parse-error: ${err.message}`] };
+    }
+    const validation = validateSummaryV2(record, { now });
+    if (!validation.ok) return { kind: 'invalid-v2', record, reasons: validation.reasons };
+    return { kind: 'v2', record };
+  }
+  const parsed = parseSummary(fs.readFileSync(artifact.mdPath, 'utf8'));
+  if (!parsed || parsed.scores.length === 0) return { kind: 'unparseable' };
+  return { kind: 'legacy', parsed };
 }
 
 // ---------------------------------------------------------------------------

@@ -40,9 +40,30 @@ export const PROMOTE_MIN_SESSIONS = 5;
 export const DEMOTE_MIN_SESSIONS = 5;
 export const COOLDOWN_DAYS = 7;
 
-export function shouldAutoApply(proposal, ratingState, cooldownState, opts = {}) {
-  const { mode = 'off', now = new Date(), autoDemote = false } = opts;
-  if (mode === 'off') return { apply: false, reason: 'autonomy disabled' };
+function stabilityWeeks(proposal, ratingState, stability) {
+  if (stability) {
+    // T4: explicit calendar-week stability. Its generation must match the
+    // ratings it gates — a mismatch means the derived states are out of sync
+    // and every route mutation is withheld until a rebuild reconciles them.
+    if (stability.generation && ratingState.generation
+      && stability.generation !== ratingState.generation) {
+      return { error: `generation-mismatch: stability ${stability.generation.slice(0, 12)}… vs ratings ${ratingState.generation.slice(0, 12)}… — rebuild required` };
+    }
+    return { weeks: stability.rules?.[proposal.rule]?.consecutiveQualifiedWeeks ?? 0, source: 'consecutiveQualifiedWeeks' };
+  }
+  // Legacy fallback: the ambiguous per-invocation counter, kept only for
+  // unmigrated projects (where it is absent from rating state and therefore
+  // conservatively blocks promotion).
+  const r = ratingState.rules?.[proposal.rule];
+  return { weeks: r?.weeks_above_threshold ?? 0, source: 'weeks_above_threshold' };
+}
+
+function evaluateGates(proposal, ratingState, cooldownState, opts) {
+  const { now = new Date(), autoDemote = false, stability, readiness } = opts;
+
+  if (readiness && !readiness.ok) {
+    return { apply: false, reason: `not-ready: ${(readiness.reasons || []).join('; ') || 'readiness check failed'}` };
+  }
 
   if (proposal.kind === 'demote' && !autoDemote) {
     return {
@@ -65,10 +86,13 @@ export function shouldAutoApply(proposal, ratingState, cooldownState, opts = {})
     if ((r.sessions_injected ?? 0) < PROMOTE_MIN_SESSIONS) {
       return { apply: false, reason: `sessions_injected ${r.sessions_injected ?? 0} < ${PROMOTE_MIN_SESSIONS}` };
     }
-    if ((r.weeks_above_threshold ?? 0) < PROMOTE_MIN_WEEKS) {
-      return { apply: false, reason: `weeks_above_threshold ${r.weeks_above_threshold ?? 0} < ${PROMOTE_MIN_WEEKS}` };
+    const weeks = stabilityWeeks(proposal, ratingState, stability);
+    if (weeks.error) return { apply: false, reason: weeks.error };
+    if (weeks.weeks < PROMOTE_MIN_WEEKS) {
+      const detail = stability?.rules?.[proposal.rule]?.latestReason;
+      return { apply: false, reason: `${weeks.source} ${weeks.weeks} < ${PROMOTE_MIN_WEEKS}${detail ? ` (latest week: ${detail})` : ''}` };
     }
-    return { apply: true, reason: `promote: ${r.weeks_above_threshold}w stable, ${r.sessions_injected} sessions` };
+    return { apply: true, reason: `promote: ${weeks.weeks}w stable, ${r.sessions_injected} sessions` };
   }
 
   if (proposal.kind === 'demote') {
@@ -82,4 +106,20 @@ export function shouldAutoApply(proposal, ratingState, cooldownState, opts = {})
   }
 
   return { apply: false, reason: `unknown kind: ${proposal.kind}` };
+}
+
+/**
+ * @param {object} opts - { mode: 'off'|'shadow'|'apply'|'on', now, autoDemote,
+ *   stability, readiness }. 'on' is the legacy alias for 'apply'. Shadow
+ *   evaluates every gate but never applies; `wouldApply` reports the verdict.
+ */
+export function shouldAutoApply(proposal, ratingState, cooldownState, opts = {}) {
+  const mode = opts.mode ?? 'off';
+  if (mode === 'off') return { apply: false, reason: 'autonomy disabled' };
+
+  const decision = evaluateGates(proposal, ratingState, cooldownState, opts);
+  if (mode === 'shadow') {
+    return { apply: false, wouldApply: decision.apply, reason: `shadow: ${decision.reason}` };
+  }
+  return decision;
 }
