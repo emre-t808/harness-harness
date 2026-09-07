@@ -19,6 +19,7 @@ import {
   generateProposals, reorderLoadIfBudget,
   loadPreviousUtilization,
   formatEffectivenessReport, formatProposals,
+  findSummaryArtifacts, classifySummaryArtifact,
 } from './weekly-analysis.js';
 import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
 import { withFileLock } from './file-lock.js';
@@ -64,6 +65,39 @@ export function writeNotification(notificationsFile, proposalCount, sessionCount
 }
 
 /**
+ * Ingest v2 summary sidecars into the canonical evidence store and rebuild
+ * ratings from replay. The evidence store write is the commit point: a crash
+ * before the ratings write is recovered by the next invocation's rebuild.
+ * HH_EVIDENCE_CRASH_AFTER_COMMIT=1 injects that crash for recovery tests.
+ */
+export async function runEvidencePipeline(paths, logEvent) {
+  const evidence = await import('./evidence-state.js');
+  const { withFileLockAsync } = await import('./file-lock.js');
+  return withFileLockAsync(paths.evidenceStateFile, async () => {
+    let store = evidence.loadEvidenceState(paths);
+    for (const artifact of findSummaryArtifacts(ANALYSIS_WINDOW_DAYS, paths)) {
+      const classified = classifySummaryArtifact(artifact);
+      if (classified.kind === 'legacy' || classified.kind === 'unparseable') continue;
+      const result = evidence.upsertObservation(store, classified.record ?? {}, {});
+      store = result.store;
+      if (result.outcome !== 'accepted' && result.outcome !== 'replaced' && result.outcome !== 'no-op') {
+        logEvent(paths.eventsLogFile, {
+          hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+          decision: { action: `evidence-${result.outcome}`, artifact: artifact.key, reason: result.reason },
+        });
+      }
+    }
+    evidence.saveEvidenceState(paths, store);
+    if (process.env.HH_EVIDENCE_CRASH_AFTER_COMMIT === '1') {
+      throw new Error('injected crash after evidence commit');
+    }
+    const rebuilt = evidence.rebuildRatings(store);
+    evidence.saveRatingStateV2(paths, rebuilt);
+    return rebuilt;
+  });
+}
+
+/**
  * Run the full aggregation + proposal + cleanup pipeline.
  * Called only when the check determines it's due.
  */
@@ -99,13 +133,22 @@ export async function runAggregation(paths) {
 
   logEvent(paths.eventsLogFile, { hook: 'Stop', handler: 'daily-check.js', phase: 'start', inputs: { window_days: ANALYSIS_WINDOW_DAYS, sessions_found: parsed.length } });
 
-  // Phase 7: Update Elo ratings BEFORE generating proposals
+  // T3: canonical evidence pipeline. A migrated project (evidence-state.json
+  // present) ingests v2 sidecars under a held-through-async lock and REBUILDS
+  // ratings deterministically — repeated windows, duplicate companions and
+  // duplicate Stop events cannot add observations. Report windows above stay
+  // distinct from this cumulative rating history. Unmigrated projects keep
+  // the legacy incremental path unchanged.
   let ratingState = { rules: {} };
   try {
-    const { updateRatingsFromAggregation, loadRatingState, saveRatingState } = await import('./rule-rating.js');
-    const priorRatingState = loadRatingState(paths);
-    ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
-    saveRatingState(paths, ratingState);
+    if (fs.existsSync(paths.evidenceStateFile)) {
+      ratingState = await runEvidencePipeline(paths, logEvent);
+    } else {
+      const { updateRatingsFromAggregation, loadRatingState, saveRatingState } = await import('./rule-rating.js');
+      const priorRatingState = loadRatingState(paths);
+      ratingState = updateRatingsFromAggregation(priorRatingState, aggregated);
+      saveRatingState(paths, ratingState);
+    }
   } catch (err) { logErr('rating-state-save', err); }
 
   const proposals = generateProposals(aggregated, allRoutes, propagationState, ratingState, {

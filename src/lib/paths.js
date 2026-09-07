@@ -88,6 +88,10 @@ export function resolvePaths(projectDir) {
     propagationStateFile: join(harnessDir, 'memory', 'propagation-state.json'),
     ratingStateFile: join(harnessDir, 'memory', 'rating-state.json'),
 
+    // Harness-reliability PRD (T3/T4): canonical evidence + derived stability
+    evidenceStateFile: join(harnessDir, 'memory', 'evidence-state.json'),
+    stabilityStateFile: join(harnessDir, 'memory', 'stability-state.json'),
+
     // Local (per-developer, gitignored)
     localDir,
     localRoutesDir: join(localDir, 'routes'),

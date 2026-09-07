@@ -36,6 +36,7 @@ function printHelp() {
     analyze           Run weekly effectiveness analysis
     apply             Apply approved route overrides
     cleanup           Clean up expired trace files
+    migrate-evidence  Initialize the v2 evidence epoch (dry-run by default; --apply)
     routes list       List configured routes
     routes create     Create a new custom route
     register          Register repo(s) in federated index
@@ -120,6 +121,14 @@ async function main() {
     case 'cleanup': {
       const { cleanup } = await import('../src/commands/cleanup.js');
       await cleanup(projectDir, flags);
+      break;
+    }
+    case 'migrate-evidence': {
+      // --project-dir <dir> is the documented spelling; --project also works.
+      const dirFlagIndex = flags.indexOf('--project-dir');
+      const targetDir = dirFlagIndex >= 0 ? resolve(flags[dirFlagIndex + 1]) : projectDir;
+      const { migrateEvidence } = await import('../src/commands/migrate-evidence.js');
+      await migrateEvidence(targetDir, flags);
       break;
     }
     case 'routes': {
