@@ -153,3 +153,75 @@ test('gate 4: still auto-promotes on positive evidence — promotion is not gate
   const r = shouldAutoApply({ kind: 'promote', rule: 'GA-001' }, ratingState, {}, { mode: 'on', now: NOW });
   assert.strictEqual(r.apply, true, 'promotion runs on evidence the rule WAS used');
 });
+
+// T4 gates ─────────────────────────────────────────────────────────────────
+
+const READY_RATINGS = {
+  generation: 'gen-1',
+  rules: { 'CS-001': { sessions_injected: 10, rating: 1600 } },
+};
+const READY_STABILITY = {
+  generation: 'gen-1',
+  rules: { 'CS-001': { consecutiveQualifiedWeeks: 3, latestReason: 'qualified' } },
+};
+
+test('T4: shadow mode never applies but reports the would-apply verdict', () => {
+  const r = shouldAutoApply(
+    { kind: 'promote', rule: 'CS-001' }, READY_RATINGS, {},
+    { mode: 'shadow', now: NOW, stability: READY_STABILITY },
+  );
+  assert.strictEqual(r.apply, false);
+  assert.strictEqual(r.wouldApply, true);
+  assert.match(r.reason, /^shadow: promote: 3w stable/);
+});
+
+test('T4: explicit stability governs promotion in apply mode', () => {
+  const r = shouldAutoApply(
+    { kind: 'promote', rule: 'CS-001' }, READY_RATINGS, {},
+    { mode: 'apply', now: NOW, stability: READY_STABILITY },
+  );
+  assert.strictEqual(r.apply, true);
+});
+
+test('T4: below three qualified weeks is withheld with the latest week reason', () => {
+  const r = shouldAutoApply(
+    { kind: 'promote', rule: 'CS-001' }, READY_RATINGS, {},
+    {
+      mode: 'apply', now: NOW,
+      stability: { generation: 'gen-1', rules: { 'CS-001': { consecutiveQualifiedWeeks: 2, latestReason: 'below-threshold' } } },
+    },
+  );
+  assert.strictEqual(r.apply, false);
+  assert.match(r.reason, /consecutiveQualifiedWeeks 2 < 3/);
+  assert.match(r.reason, /below-threshold/);
+});
+
+test('T4: mismatched stability/rating generations withhold every mutation', () => {
+  const r = shouldAutoApply(
+    { kind: 'promote', rule: 'CS-001' }, READY_RATINGS, {},
+    { mode: 'apply', now: NOW, stability: { ...READY_STABILITY, generation: 'gen-2' } },
+  );
+  assert.strictEqual(r.apply, false);
+  assert.match(r.reason, /generation-mismatch/);
+});
+
+test('T4: failed readiness withholds before any other gate', () => {
+  const r = shouldAutoApply(
+    { kind: 'promote', rule: 'CS-001' }, READY_RATINGS, {},
+    {
+      mode: 'apply', now: NOW, stability: READY_STABILITY,
+      readiness: { ok: false, reasons: ['missing reliability-readiness.json'] },
+    },
+  );
+  assert.strictEqual(r.apply, false);
+  assert.match(r.reason, /not-ready: missing reliability-readiness\.json/);
+});
+
+test('T4: autoDemote stays off even in ready apply mode', () => {
+  const r = shouldAutoApply(
+    { kind: 'demote', rule: 'CS-001', sessions: 10, avgScore: 0 }, READY_RATINGS, {},
+    { mode: 'apply', now: NOW, stability: READY_STABILITY, readiness: { ok: true, reasons: [] } },
+  );
+  assert.strictEqual(r.apply, false);
+  assert.match(r.reason, /auto-demote is opt-in/);
+});

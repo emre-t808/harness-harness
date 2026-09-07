@@ -106,6 +106,7 @@ export function resolvePaths(projectDir) {
     eventsLogFile: join(localDir, 'events.ndjson'),
     revertsDir: join(localDir, 'reverts'),
     autonomyStateFile: join(localDir, 'autonomy-state.json'),
+    reliabilityReadinessFile: join(localDir, 'reliability-readiness.json'),
 
     // Manifests live alongside traces
     manifestDir: (date) => join(claudeDir, 'traces', date),
