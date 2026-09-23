@@ -188,18 +188,21 @@ describe('generateProposals — propagation state tracking', () => {
 
 describe('summary artifact classification (T2)', () => {
   const NOW = new Date('2026-09-07T12:00:00Z');
+  // findRecentSummaries windows date dirs against the real clock, so the
+  // fixture dir must be recent; a fixed date silently falls out of the window.
+  const DAY = new Date().toISOString().slice(0, 10);
 
   function tempTraces() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-artifacts-'));
-    fs.mkdirSync(path.join(dir, '2026-09-06'), { recursive: true });
+    fs.mkdirSync(path.join(dir, DAY), { recursive: true });
     return dir;
   }
 
   it('prefers the JSON sidecar and never double-counts its markdown companion', () => {
     const tracesDir = tempTraces();
-    const md = path.join(tracesDir, '2026-09-06', 'claude--s1-summary.md');
+    const md = path.join(tracesDir, DAY, 'claude--s1-summary.md');
     fs.writeFileSync(md, '**Route:** general\n\n### Effectiveness Scores\n\n| Context | Score | Evidence |\n|---|---|---|\n| TR-001 | 1.0 | referenced |\n');
-    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'claude--s1-summary.json'), JSON.stringify({
+    fs.writeFileSync(path.join(tracesDir, DAY, 'claude--s1-summary.json'), JSON.stringify({
       schemaVersion: 2, client: 'claude', sessionId: 's1', storageKey: 'claude--s1',
       startedAt: '2026-09-06T10:00:00Z', lastEventAt: '2026-09-06T11:00:00Z',
       route: 'general', scorerVersion: 'behavioral-v2',
@@ -218,10 +221,10 @@ describe('summary artifact classification (T2)', () => {
 
   it('classifies legacy markdown separately and invalid sidecars as invalid-v2', () => {
     const tracesDir = tempTraces();
-    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'old-summary.md'),
+    fs.writeFileSync(path.join(tracesDir, DAY, 'old-summary.md'),
       '**Route:** general\n\n### Effectiveness Scores\n\n| Context | Score | Evidence |\n|---|---|---|\n| TR-001 | 1.0 | referenced |\n');
-    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'bad-summary.md'), 'no table');
-    fs.writeFileSync(path.join(tracesDir, '2026-09-06', 'bad-summary.json'), '{not-json');
+    fs.writeFileSync(path.join(tracesDir, DAY, 'bad-summary.md'), 'no table');
+    fs.writeFileSync(path.join(tracesDir, DAY, 'bad-summary.json'), '{not-json');
 
     const artifacts = findSummaryArtifacts(7, { tracesDir });
     const byKey = Object.fromEntries(artifacts.map((a) => [path.basename(a.key), classifySummaryArtifact(a, { now: NOW })]));
