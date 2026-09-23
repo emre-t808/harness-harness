@@ -107,7 +107,9 @@ describe('assembler wrapper — native path (no delegate configured)', () => {
     fs.writeFileSync(stub, [
       'export async function main(projectDir) {',
       "  const { readFileSync } = await import('fs');",
-      "  process.stdout.write('NATIVE:' + readFileSync('/dev/stdin', 'utf8'));",
+      // fd 0, not '/dev/stdin': on Linux the spawn pipe is a socket and
+      // opening /dev/stdin fails with ENXIO (macOS allows it).
+      "  process.stdout.write('NATIVE:' + readFileSync(0, 'utf8'));",
       '}',
     ].join('\n'));
     const hookPath = installWrapper(stub);
