@@ -4,7 +4,7 @@
 # Fires when a Claude Code session begins or resumes.
 # Creates session directory and injects initial context.
 #
-# Input:  JSON on stdin with { session_id, source: "startup"|"resume"|"clear"|"compact" }
+# Input:  JSON on stdin with { session_id, source: "startup"|"resume"|"clear"|"compact"|"fork" }
 # Output: stdout (context injected into Claude)
 
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
@@ -15,7 +15,6 @@ SESSION=""
 # Source event-log helper if available (non-fatal if missing).
 HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
 [ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
-type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh start 0
 
 # Skip if harness not initialized
 if [ ! -d "$HARNESS_DIR" ]; then
@@ -65,7 +64,8 @@ if payload_supplied:
 elif environment_supplied:
     session = os.environ['CLAUDE_SESSION_ID']
 else:
-    session = 'unknown'
+    # PRD 5.4: no identity at all. Never fall back to a shared "unknown" directory.
+    sys.exit(3)
 
 if (
     not isinstance(session, str)
@@ -75,7 +75,7 @@ if (
     sys.exit(2)
 
 source = payload.get('source', 'startup')
-if source not in ('startup', 'resume', 'clear', 'compact'):
+if source not in ('startup', 'resume', 'clear', 'compact', 'fork'):
     sys.exit(2)
 
 print(session)
@@ -86,11 +86,18 @@ PARSE_STATUS=$?
 cleanup_payload
 trap - EXIT HUP INT TERM
 if [ "$PARSE_STATUS" -ne 0 ]; then
+  # PRD 5.4: no valid identity means write nothing and leave one error row.
+  REASON='no valid session_id/source in payload'
+  [ "$PARSE_STATUS" -eq 3 ] && REASON='no session_id in payload or environment; nothing written (PRD 5.4)'
+  type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh error 0 "{\"reason\":\"$REASON\"}"
   exit 0
 fi
 
 SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
 SOURCE=$(printf '%s\n' "$PARSED" | sed -n '2p')
+
+# Logged only now so the start row carries the payload session id.
+type hh_log_event >/dev/null 2>&1 && hh_log_event SessionStart session-start.sh start 0
 
 # Collision-free client/session storage key (PRD §5.3). Unrendered template
 # or unknown client → legacy unprefixed layout, unchanged.
