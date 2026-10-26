@@ -84,6 +84,8 @@ if not safe_session(session):
 
 print(session)
 print('legacy' if use_legacy_pointer else 'session')
+event_name = payload.get('hook_event_name')
+print(event_name if isinstance(event_name, str) and SAFE.fullmatch(event_name) else 'PostToolUse')
 PYEOF
 )
 PARSE_STATUS=$?
@@ -92,6 +94,7 @@ if [ "$PARSE_STATUS" -ne 0 ]; then
 fi
 SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
 POINTER_MODE=$(printf '%s\n' "$PARSED" | sed -n '2p')
+EVENT_NAME=$(printf '%s\n' "$PARSED" | sed -n '3p')
 
 # Collision-free client/session storage key (PRD §5.1). The client is baked in
 # by the installer ({{HH_CLIENT}}) or supplied via HH_CLIENT; an unrendered
@@ -141,7 +144,8 @@ except Exception:
 
 tool_name = data.get("tool_name") or data.get("tool") or None
 tool_input = data.get("tool_input") or {}
-tool_response = data.get("tool_response") or data.get("tool_result") or ""
+tool_response = data.get("tool_response") or data.get("tool_result") or data.get("error") or ""
+is_failure = data.get("hook_event_name") == "PostToolUseFailure"
 session_id = env_session or data.get("session_id") or "unknown"
 
 if not isinstance(tool_response, str):
@@ -231,7 +235,7 @@ event = {
     "referenced_context": extract_referenced_rules(
         tool_response, load_known_rule_ids(session_id, storage_key, use_legacy_pointer)),
     "files_touched": files_touched,
-    "outcome": bash_outcome(tool_response) if tool_name == "Bash" else None,
+    "outcome": "fail" if is_failure else (bash_outcome(tool_response) if tool_name == "Bash" else None),
 }
 if client:
     event["client"] = client
@@ -256,5 +260,5 @@ trap - EXIT HUP INT TERM
 # Emit a single end-event per hook invocation. Tools fire many PostToolUse hooks
 # per session; logging start+end on every one would 10x the events file. So we
 # emit only end here (the "start" of each event is implied by its ts).
-type hh_log_event >/dev/null 2>&1 && hh_log_event PostToolUse trace-capture.sh end 0
+type hh_log_event >/dev/null 2>&1 && hh_log_event "${EVENT_NAME:-PostToolUse}" trace-capture.sh end 0
 exit 0
