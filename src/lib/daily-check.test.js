@@ -33,6 +33,9 @@ function setupProject(tmpDir) {
   fs.mkdirSync(routesDir, { recursive: true });
   fs.mkdirSync(tracesDir, { recursive: true });
   fs.writeFileSync(traceIndex, '# Session Trace Index\n', 'utf8');
+  // Proposal generation is frozen unless opted in; the pipeline tests below
+  // exercise the recording path, so opt in here and override per test.
+  fs.writeFileSync(path.join(harnessDir, 'config.json'), JSON.stringify({ proposals: { generate: true } }), 'utf8');
 
   return { harnessDir, memoryDir, localMemoryDir, routesDir, tracesDir };
 }
@@ -250,6 +253,33 @@ describe('runAggregation', () => {
     // that kept the file from growing to thousands of lines of no-ops.
     assert.equal(fs.readFileSync(targetOverFile, 'utf8'), original,
       'an empty run must not append a no-op block');
+  });
+
+  it('does not record proposals when generation is frozen (the default)', async () => {
+    const { harnessDir, tracesDir } = setupProject(tmpDir);
+    const today = new Date().toISOString().slice(0, 10);
+    // No "proposals.generate": true → frozen. Same 3-session demote setup as
+    // the append test, so a proposal IS computed; it must not reach the file.
+    fs.writeFileSync(path.join(harnessDir, 'config.json'), '{}', 'utf8');
+    for (const sess of ['sess1', 'sess2', 'sess3']) {
+      writeSummary(tracesDir, today, sess, 'general', [
+        { rule: 'FO-001', score: 0.0, evidence: 'ignored' },
+      ]);
+    }
+
+    const paths = resolvePaths(tmpDir);
+    const targetOverFile = paths.localOverridesFile || paths.overridesFile;
+    const result = await runAggregation(paths);
+
+    assert.equal(result.proposalsFrozen, true);
+    assert.ok(result.proposals > 0, 'the proposal is still computed and counted');
+    assert.equal(fs.existsSync(targetOverFile), false, 'frozen: nothing appended to route-overrides.md');
+    // Only the append is gated: the effectiveness report is still written.
+    const effFile = paths.localEffectivenessFile || paths.effectivenessFile;
+    assert.ok(fs.readFileSync(effFile, 'utf8').includes('Last aggregated:'), 'scoring still runs while frozen');
+    const notif = fs.readFileSync(paths.localNotificationsFile, 'utf8');
+    assert.ok(notif.includes('NOT recorded'), 'the notification says the proposal was withheld');
+    assert.ok(notif.includes('"proposals": {"generate": true}'), 'the notification names the switch');
   });
 });
 
