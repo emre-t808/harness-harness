@@ -13,6 +13,7 @@ import { loadRuleRegistry } from '../lib/rule-registry.js';
 
 export async function health(projectDir, flags) {
   const showAll = flags.includes('--all');
+  const teamMode = flags.includes('--team');
   const reposIdx = flags.indexOf('--repos');
   const reposFilter = reposIdx >= 0 && flags[reposIdx + 1]
     ? flags[reposIdx + 1].split(',').map(s => s.trim())
@@ -92,13 +93,19 @@ export async function health(projectDir, flags) {
     }
   }
 
-  // Show pending proposals
-  if (fs.existsSync(paths.overridesFile)) {
-    const content = fs.readFileSync(paths.overridesFile, 'utf8');
-    const pendingCount = (content.match(/Status: pending/g) || []).length;
+  // Show pending proposals. Read the same file `analyze` WRITES and `apply`
+  // READS: the per-developer local file by default, the shared file with
+  // --team (see apply.js). Count only per-entry "  Status: pending" lines —
+  // the block header "Status: pending-review" is not a proposal.
+  const overridesFile = teamMode
+    ? paths.overridesFile
+    : (paths.localOverridesFile || paths.overridesFile);
+  if (fs.existsSync(overridesFile)) {
+    const content = fs.readFileSync(overridesFile, 'utf8');
+    const pendingCount = (content.match(/^  Status: pending$/gm) || []).length;
     if (pendingCount > 0) {
       console.log(`  Pending proposals: ${pendingCount}`);
-      console.log(`  Review: cat ${paths.overridesFile}`);
+      console.log(`  Review: cat ${overridesFile}`);
       console.log(`  Apply:  harness-harness apply`);
     } else {
       console.log('  No pending proposals.');
