@@ -48,12 +48,14 @@ export function getLastAggregationDate(effectivenessFile) {
  * Write a notification file for the next SessionStart hook to pick up.
  * Overwrites any previous notification (daily cycle).
  */
-export function writeNotification(notificationsFile, proposalCount, sessionCount) {
+export function writeNotification(notificationsFile, proposalCount, sessionCount, frozen = false) {
   const today = new Date().toISOString().slice(0, 10);
   const developer = process.env.USER || process.env.USERNAME || 'unknown';
   const lines = ['## Harness Notifications', ''];
 
-  if (proposalCount > 0) {
+  if (frozen) {
+    lines.push(`- [${today}] Daily analysis by ${developer}: ${sessionCount} sessions analyzed, ${proposalCount} proposal(s) computed but NOT recorded — proposal generation is frozen (set "proposals": {"generate": true} in .harness/config.json to resume)`);
+  } else if (proposalCount > 0) {
     lines.push(`- [${today}] Daily analysis by ${developer}: ${sessionCount} sessions analyzed, ${proposalCount} new proposal(s). Review with \`harness-harness health\``);
   } else {
     lines.push(`- [${today}] Daily analysis by ${developer}: ${sessionCount} sessions analyzed, all scores within thresholds.`);
@@ -62,6 +64,22 @@ export function writeNotification(notificationsFile, proposalCount, sessionCount
 
   fs.mkdirSync(path.dirname(notificationsFile), { recursive: true });
   fs.writeFileSync(notificationsFile, lines.join('\n'), 'utf8');
+}
+
+/**
+ * `"proposals": { "generate": true }` in .harness/config.json opts a project
+ * into appending proposals to route-overrides.md. Absent or false = frozen:
+ * the queue reached 784 pending / 0 approved entries in 60 days because the
+ * tuner appended daily and nothing read it back. Scores, ratings and the
+ * effectiveness report are unaffected; only the append is gated.
+ */
+export function proposalGenerationEnabled(paths) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(paths.configFile, 'utf8'));
+    return cfg.proposals?.generate === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -326,7 +344,8 @@ export async function runAggregation(paths) {
     proposals.budgetChanges.length > 0 ||
     (proposals.propagations && proposals.propagations.length > 0);
   const targetOverFile = paths.localOverridesFile || paths.overridesFile;
-  if (hasProposals) {
+  const proposalsFrozen = !proposalGenerationEnabled(paths);
+  if (hasProposals && !proposalsFrozen) {
     fs.mkdirSync(path.dirname(targetOverFile), { recursive: true });
     withFileLock(targetOverFile, () => {
       const existing = fs.existsSync(targetOverFile) ? fs.readFileSync(targetOverFile, 'utf8') : '';
@@ -382,7 +401,7 @@ export async function runAggregation(paths) {
 
   // Notification
   const totalProposals = proposals.promotions.length + proposals.demotions.length + proposals.budgetChanges.length;
-  writeNotification(paths.localNotificationsFile || paths.notificationsFile, totalProposals, parsed.length);
+  writeNotification(paths.localNotificationsFile || paths.notificationsFile, totalProposals, parsed.length, hasProposals && proposalsFrozen);
 
   // T4: three completed evidence weeks with no qualifying rule is a policy
   // review signal, not a broken-loop alarm. Surface it with the population.
@@ -441,6 +460,7 @@ export async function runAggregation(paths) {
     outputs: {
       sessionsAnalyzed: parsed.length,
       proposals: totalProposals,
+      proposalsFrozen,
       reordered: reorderedCount,
       autonomousChanges,
       tracesCleaned: cleanupResult.deletedFiles,
@@ -453,6 +473,7 @@ export async function runAggregation(paths) {
     sessionsAnalyzed: parsed.length,
     routes: allRoutes,
     proposals: totalProposals,
+    proposalsFrozen,
     reordered: reorderedCount,
     reorderProposals,
     autonomyMode: effectiveMode,

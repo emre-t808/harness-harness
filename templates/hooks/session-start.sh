@@ -199,13 +199,25 @@ if [ -f "$WORK_STATUS" ]; then
   fi
 fi
 
-# Check for pending harness notifications
-NOTIFICATIONS_FILE="${HARNESS_DIR}/memory/notifications.md"
+# Check for pending harness notifications. The daily tuner (daily-check.js)
+# writes the per-developer LOCAL file; the shared one only exists on team setups.
+NOTIFICATIONS_FILE="${HARNESS_DIR}/local/memory/notifications.md"
+[ -f "$NOTIFICATIONS_FILE" ] || NOTIFICATIONS_FILE="${HARNESS_DIR}/memory/notifications.md"
 if [ -f "$NOTIFICATIONS_FILE" ]; then
-  NOTIF_LINES=$(grep -c "^- " "$NOTIFICATIONS_FILE" 2>/dev/null || echo "0")
-  if [ "$NOTIF_LINES" -gt 0 ]; then
+  NOTIF_LINES=$(grep -c "^- " "$NOTIFICATIONS_FILE" 2>/dev/null || true)
+  if [ "${NOTIF_LINES:-0}" -gt 0 ]; then
     echo ""
     echo "Harness: ${NOTIF_LINES} pending notification(s). Review with 'harness-harness health'"
+  fi
+fi
+
+# Pending proposal count from the same local file apply/health read.
+# "^  Status: pending$" is the per-entry line; it excludes the block header "Status: pending-review".
+OVERRIDES_FILE="${HARNESS_DIR}/local/memory/route-overrides.md"
+if [ -f "$OVERRIDES_FILE" ]; then
+  PENDING=$(grep -c '^  Status: pending$' "$OVERRIDES_FILE" 2>/dev/null || true)
+  if [ "${PENDING:-0}" -gt 0 ]; then
+    echo "Harness: ${PENDING} pending proposal(s) in .harness/local/memory/route-overrides.md. Review with 'harness-harness health'"
   fi
 fi
 
