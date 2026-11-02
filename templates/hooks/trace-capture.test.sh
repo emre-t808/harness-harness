@@ -13,7 +13,8 @@ run_case() {
   local name="$1" payload="$2" env_state="$3" env_session="$4" expected_filename="$5"
   local tmpdir
   tmpdir=$(mktemp -d)
-  mkdir -p "$tmpdir/runtime"
+  mkdir -p "$tmpdir/runtime" "$tmpdir/.claude/hooks/lib"
+  cp "$SCRIPT_DIR/lib/event-log.sh" "$tmpdir/.claude/hooks/lib/"
   if [ "$env_state" = "unset" ]; then
     env -u CLAUDE_SESSION_ID CLAUDE_PROJECT_DIR="$tmpdir" TMPDIR="$tmpdir" \
       XDG_RUNTIME_DIR="$tmpdir/runtime" \
@@ -33,6 +34,12 @@ run_case() {
     echo "    [debug] dir contents:" >&2
     ls -la "$trace_dir/" >&2 2>/dev/null || true
     fail "$name — expected file not found: $actual"
+  fi
+  if [ "$expected_filename" = "none" ]; then
+    # PRD 5.4: writing nothing still leaves exactly one error row.
+    local rows
+    rows=$(grep -c '"handler":"trace-capture.sh","phase":"error"' "$tmpdir/.harness/local/events.ndjson" 2>/dev/null || true)
+    [ "$rows" = "1" ] || fail "$name — expected one error row, got ${rows:-0}"
   fi
   if find "$tmpdir" -name 'hh-trace-capture.*' -print -quit | grep -q .; then
     fail "$name — captured payload temporary file was not removed"
@@ -55,11 +62,11 @@ run_case "env CLAUDE_SESSION_ID used when stdin lacks session_id" \
   'session-from-env' \
   'session-from-env.jsonl'
 
-run_case "falls back to unknown when both missing" \
+run_case "writes nothing when both are missing (PRD 5.4)" \
   '{"tool_name":"Bash","tool_input":{},"tool_response":""}' \
   'unset' \
   '' \
-  'unknown.jsonl'
+  'none'
 
 run_case "rejects path traversal in stdin session_id" \
   '{"session_id":"../etc/passwd","tool_name":"Bash","tool_input":{},"tool_response":""}' \

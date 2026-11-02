@@ -157,6 +157,35 @@ describe('serializeRulesYaml', () => {
     assert.deepStrictEqual(parsed.get('API-001').tags, ['api']);
     assert.equal(parsed.get('API-001').severity, 'must');
   });
+
+  // OI-R43: every ingest parses and rewrites rules.yaml. A text that does not
+  // survive that unchanged drifts once per run (a backslash per `"` per write)
+  // and its id (a hash of the text) stops matching the text it labels.
+  it('round-trips texts with quotes, backslashes, colons and look-alike scalars unchanged', () => {
+    const texts = [
+      'Use "gws", not the MCP',
+      'Explicit \\"DON\'T\\" stays literal',
+      'Path: C:\\Users\\x and a trailing backslash \\',
+      'ratio a:b with "quotes" and \\\\ doubled',
+      '[related-permanent-note]',
+      "'single-quoted'",
+      'true',
+      '42',
+      '  padded  ',
+    ];
+    // `note` is outside the serializer's field order; extra fields take the same path.
+    const rules = new Map(texts.map((text, i) => [`R-${i}`, { id: `R-${i}`, text, severity: 'must', note: text }]));
+
+    const parsed = parseRulesYaml(serializeRulesYaml(rules));
+    assert.deepStrictEqual([...parsed.values()].map((r) => r.text), texts);
+    assert.deepStrictEqual([...parsed.values()].map((r) => r.note), texts);
+
+    // A file the serializer wrote must survive the next ingest's parse + write byte for byte.
+    const file = serializeRulesYaml(parsed);
+    const rewritten = serializeRulesYaml(parseRulesYaml(file));
+    assert.equal(rewritten, file);
+    assert.deepStrictEqual([...parseRulesYaml(rewritten).values()].map((r) => r.text), texts);
+  });
 });
 
 describe('filterRules', () => {

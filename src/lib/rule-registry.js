@@ -124,18 +124,34 @@ function parseRuleBlock(lines) {
       continue;
     }
 
-    if (value.startsWith('[') && value.endsWith(']')) {
-      rule[key] = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    } else if (value === 'true') rule[key] = true;
-    else if (value === 'false') rule[key] = false;
-    else if (/^\d+$/.test(value)) rule[key] = parseInt(value, 10);
-    else if (/^\d+\.\d+$/.test(value)) rule[key] = parseFloat(value);
-    else rule[key] = value.replace(/^["']|["']$/g, '');
-
+    rule[key] = parseScalar(value);
     i++;
   }
 
   return rule;
+}
+
+/** Inverse of the serializer's quoting: a double-quoted value is always a string, unescaped. */
+function parseScalar(value) {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+  }
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (/^\d+$/.test(value)) return parseInt(value, 10);
+  if (/^\d+\.\d+$/.test(value)) return parseFloat(value);
+  return value.replace(/^["']|["']$/g, '');
+}
+
+/** Quote a string when its plain form would not parse back to the same string. */
+function formatString(value) {
+  const plainReadsBack = !value.includes(':') && !value.includes('"')
+    && parseScalar(value.trim()) === value;
+  if (plainReadsBack) return value;
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function parseSignalBlock(lines) {
@@ -230,8 +246,8 @@ export function serializeRulesYaml(rules) {
 
       if (Array.isArray(value)) {
         lines.push(`    ${key}: [${value.join(', ')}]`);
-      } else if (typeof value === 'string' && (value.includes(':') || value.includes('"'))) {
-        lines.push(`    ${key}: "${value.replace(/"/g, '\\"')}"`);
+      } else if (typeof value === 'string') {
+        lines.push(`    ${key}: ${formatString(value)}`);
       } else {
         lines.push(`    ${key}: ${value}`);
       }
@@ -243,6 +259,8 @@ export function serializeRulesYaml(rules) {
       if (Array.isArray(value)) {
         if (value.length === 0) continue;
         lines.push(`    ${key}: [${value.join(', ')}]`);
+      } else if (typeof value === 'string') {
+        lines.push(`    ${key}: ${formatString(value)}`);
       } else {
         lines.push(`    ${key}: ${value}`);
       }

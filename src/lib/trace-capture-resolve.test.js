@@ -8,27 +8,26 @@ test('resolveSessionId: prefers stdin payload over env', () => {
       { session_id: 'session-abc' },
       { CLAUDE_SESSION_ID: 'session-from-env' },
     ),
-    { sessionId: 'session-abc', useLegacyPointer: false },
+    { sessionId: 'session-abc' },
   );
 });
 
 test('resolveSessionId: falls back to env when stdin missing', () => {
   const environment = { CLAUDE_SESSION_ID: 'session-from-env' };
-  const expected = { sessionId: 'session-from-env', useLegacyPointer: false };
+  const expected = { sessionId: 'session-from-env' };
   assert.deepStrictEqual(resolveSessionId({}, environment), expected);
   assert.deepStrictEqual(resolveSessionId(null, environment), expected);
   assert.deepStrictEqual(resolveSessionId({ session_id: null }, environment), expected);
 });
 
-test('resolveSessionId: marks unknown as legacy only when both identities are absent', () => {
-  const expected = { sessionId: 'unknown', useLegacyPointer: true };
-  assert.deepStrictEqual(resolveSessionId({}, {}), expected);
-  assert.deepStrictEqual(resolveSessionId(null, {}), expected);
-  assert.deepStrictEqual(resolveSessionId({ session_id: null }, {}), expected);
+test('resolveSessionId: returns null when both identities are absent (PRD 5.4: write nothing)', () => {
+  assert.strictEqual(resolveSessionId({}, {}), null);
+  assert.strictEqual(resolveSessionId(null, {}), null);
+  assert.strictEqual(resolveSessionId({ session_id: null }, {}), null);
 });
 
 test('resolveSessionId: treats explicitly supplied unknown as a known session', () => {
-  const expected = { sessionId: 'unknown', useLegacyPointer: false };
+  const expected = { sessionId: 'unknown' };
   assert.deepStrictEqual(
     resolveSessionId(
       { session_id: 'unknown' },
@@ -71,10 +70,10 @@ test('resolveSessionId: invalid supplied environment identity fails closed', () 
 test('resolveSessionId: accepts safe alphanumeric, dash, underscore, dot', () => {
   assert.deepStrictEqual(
     resolveSessionId({ session_id: 'session-1778310466583' }, {}),
-    { sessionId: 'session-1778310466583', useLegacyPointer: false },
+    { sessionId: 'session-1778310466583' },
   );
   assert.deepStrictEqual(
     resolveSessionId({ session_id: 'abc_123.def' }, {}),
-    { sessionId: 'abc_123.def', useLegacyPointer: false },
+    { sessionId: 'abc_123.def' },
   );
 });
