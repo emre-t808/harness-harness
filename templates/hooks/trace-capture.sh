@@ -29,7 +29,9 @@ if ! command -v python3 &>/dev/null; then
   exit 0
 fi
 
-# Resolve identity and separately track whether "unknown" came from true absence.
+# Resolve identity (PRD 5.4): the payload session_id, else CLAUDE_SESSION_ID.
+# Without a valid one the hook writes nothing and logs one error row; it never
+# borrows the shared current-manifest-path pointer or writes unknown.jsonl.
 # Mirror the structured contract in src/lib/trace-capture-resolve.js.
 PARSED=$(python3 - "$TMPFILE" <<'PYEOF'
 import json, os, re, sys
@@ -42,19 +44,6 @@ def safe_session(value):
         and SAFE.fullmatch(value) is not None
     )
 
-def legacy_manifest_session():
-    cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
-        os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
-    try:
-        with open(os.path.join(cache_dir, 'current-manifest-path')) as pointer:
-            manifest_path = pointer.read().strip()
-        with open(manifest_path) as manifest_file:
-            manifest = json.load(manifest_file)
-        session = manifest.get('session')
-        return session if safe_session(session) else None
-    except Exception:
-        return None
-
 try:
     with open(sys.argv[1], encoding='utf-8') as payload_file:
         payload = json.load(payload_file)
@@ -64,37 +53,38 @@ except Exception:
 if not isinstance(payload, dict):
     sys.exit(2)
 
+event_name = payload.get('hook_event_name')
+print(event_name if isinstance(event_name, str) and SAFE.fullmatch(event_name) else 'PostToolUse')
+
 payload_supplied = (
     'session_id' in payload and payload['session_id'] is not None
 )
 environment_supplied = 'CLAUDE_SESSION_ID' in os.environ
-use_legacy_pointer = False
 
 if payload_supplied:
     session = payload['session_id']
 elif environment_supplied:
     session = os.environ['CLAUDE_SESSION_ID']
 else:
-    session = 'unknown'
-    use_legacy_pointer = True
-    session = legacy_manifest_session() or session
+    # PRD 5.4: no identity at all. Never fall back to a shared "unknown" trace.
+    sys.exit(3)
 
 if not safe_session(session):
     sys.exit(2)
 
 print(session)
-print('legacy' if use_legacy_pointer else 'session')
-event_name = payload.get('hook_event_name')
-print(event_name if isinstance(event_name, str) and SAFE.fullmatch(event_name) else 'PostToolUse')
 PYEOF
 )
 PARSE_STATUS=$?
+EVENT_NAME=$(printf '%s\n' "$PARSED" | sed -n '1p')
 if [ "$PARSE_STATUS" -ne 0 ]; then
+  # PRD 5.4: no valid identity means write nothing and leave one error row.
+  REASON='invalid session_id or unreadable payload; nothing written (PRD 5.4)'
+  [ "$PARSE_STATUS" -eq 3 ] && REASON='no session_id in payload or environment; nothing written (PRD 5.4)'
+  type hh_log_event >/dev/null 2>&1 && hh_log_event "${EVENT_NAME:-PostToolUse}" trace-capture.sh error 0 "{\"reason\":\"$REASON\"}"
   exit 0
 fi
-SESSION=$(printf '%s\n' "$PARSED" | sed -n '1p')
-POINTER_MODE=$(printf '%s\n' "$PARSED" | sed -n '2p')
-EVENT_NAME=$(printf '%s\n' "$PARSED" | sed -n '3p')
+SESSION=$(printf '%s\n' "$PARSED" | sed -n '2p')
 
 # Collision-free client/session storage key (PRD §5.1). The client is baked in
 # by the installer ({{HH_CLIENT}}) or supplied via HH_CLIENT; an unrendered
@@ -108,20 +98,19 @@ esac
 TRACE_DIR="${PROJECT_DIR}/.claude/traces/${DATE_DIR}"
 # Filename matches existing manifest convention: ${storage_key}.jsonl ↔ ${storage_key}-manifest.json.
 # Note: session_id values already include the "session-" prefix from Claude Code's hook payload,
-# so we don't add another. When SESSION="unknown", the file is "unknown.jsonl" (legacy-compatible).
+# so we don't add another. A call without an identity never gets here (PRD 5.4).
 TRACE_FILE="${TRACE_DIR}/${STORAGE_KEY}.jsonl"
 
 mkdir -p "$TRACE_DIR"
 
-python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" "$POINTER_MODE" "$STORAGE_KEY" "$CLIENT" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
+python3 - "$TMPFILE" "$SESSION" "$PROJECT_DIR" "$STORAGE_KEY" "$CLIENT" >> "$TRACE_FILE" 2>/dev/null <<'PYEOF'
 import base64, json, os, re, sys, datetime
 
 stdin_file = sys.argv[1] if len(sys.argv) > 1 else None
 env_session = sys.argv[2] if len(sys.argv) > 2 else None
 base_dir = (sys.argv[3] + "/") if len(sys.argv) > 3 else ""
-use_legacy_pointer = len(sys.argv) > 4 and sys.argv[4] == 'legacy'
-storage_key = (sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None) or env_session
-client = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None
+storage_key = (sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None) or env_session
+client = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else None
 
 # Phase 8: response_snippet config (default: enabled)
 SNIPPET_CAP_BYTES = 2048
@@ -146,7 +135,7 @@ tool_name = data.get("tool_name") or data.get("tool") or None
 tool_input = data.get("tool_input") or {}
 tool_response = data.get("tool_response") or data.get("tool_result") or data.get("error") or ""
 is_failure = data.get("hook_event_name") == "PostToolUseFailure"
-session_id = env_session or data.get("session_id") or "unknown"
+session_id = env_session
 
 if not isinstance(tool_response, str):
     tool_response = json.dumps(tool_response)
@@ -199,15 +188,12 @@ def normalize_rule_ids(rules):
             return []
     return normalized
 
-def load_known_rule_ids(session, key, legacy_pointer):
+def load_known_rule_ids(session, key):
     """Read rule IDs from the current session manifest (storage-key pointer)."""
     cache_dir = os.environ.get('XDG_RUNTIME_DIR') or os.path.join(
         os.environ.get('HOME', '/tmp'), '.cache', 'harness-harness')
-    if legacy_pointer:
-        manifest_pointer = os.path.join(cache_dir, 'current-manifest-path')
-    else:
-        manifest_pointer = os.path.join(
-            cache_dir, 'manifest-pointers', f'{key}.path')
+    manifest_pointer = os.path.join(
+        cache_dir, 'manifest-pointers', f'{key}.path')
     try:
         with open(manifest_pointer, 'r') as f:
             manifest_path = f.read().strip()
@@ -233,7 +219,7 @@ event = {
     "output_size": len(tool_response),
     "duration_ms": None,
     "referenced_context": extract_referenced_rules(
-        tool_response, load_known_rule_ids(session_id, storage_key, use_legacy_pointer)),
+        tool_response, load_known_rule_ids(session_id, storage_key)),
     "files_touched": files_touched,
     "outcome": "fail" if is_failure else (bash_outcome(tool_response) if tool_name == "Bash" else None),
 }
