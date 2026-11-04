@@ -18,6 +18,14 @@
 
   const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
   const ASSEMBLER_SRC = '__ASSEMBLER_SRC__';
+  // Client identity, for the delegate only. The rendered shell hooks key the
+  // session dir, trace and manifest pointer as <client>--<id>; a delegate that
+  // keyed by the raw id would lose the session's state.md and score every
+  // rule reference as []. Never a settings.json env: that also reaches the
+  // session's Bash tool. Left unrendered or unknown, it passes nothing and
+  // the delegate keeps the legacy raw-id layout, as the shell hooks do.
+  const CLIENT = process.env.HH_CLIENT || '{{HH_CLIENT}}';
+  const KNOWN_CLIENTS = ['claude', 'codex'];
 
   // Stdin is read lazily and at most once: the native assembler reads
   // /dev/stdin itself, so the wrapper must not consume it on that path.
@@ -81,7 +89,8 @@ Details: .harness/local/events.ndjson (handler "hh-assembler.js", phase "error")
     if (!delegate) return false;
     const abs = path.isAbsolute(delegate) ? delegate : path.join(projectDir, delegate);
     try {
-      const out = execFileSync('node', [abs], { input: readStdinOnce(), env: process.env });
+      const env = KNOWN_CLIENTS.includes(CLIENT) ? { ...process.env, HH_CLIENT: CLIENT } : process.env;
+      const out = execFileSync('node', [abs], { input: readStdinOnce(), env });
       if (!out.toString().trim()) {
         failures.push(`delegate ${delegate} exited 0 but produced no output`);
         return false;
