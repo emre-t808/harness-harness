@@ -22,11 +22,14 @@ const STDIN_PAYLOAD = JSON.stringify({ prompt: 'hello', session_id: 'sess-test' 
 let tmpDir;
 let projectDir;
 
-function installWrapper(assemblerSrc) {
+function installWrapper(assemblerSrc, client = null) {
   const hooksDir = path.join(projectDir, '.claude', 'hooks');
   fs.mkdirSync(hooksDir, { recursive: true });
   const hookPath = path.join(hooksDir, 'hh-assembler.js');
-  fs.writeFileSync(hookPath, buildAssemblerWrapper(assemblerSrc));
+  let wrapper = buildAssemblerWrapper(assemblerSrc);
+  // A project-local installer renders the client into the wrapper; init leaves it.
+  if (client) wrapper = wrapper.replaceAll("'{{HH_CLIENT}}'", `'${client}'`);
+  fs.writeFileSync(hookPath, wrapper);
   return hookPath;
 }
 
@@ -40,7 +43,7 @@ function configureDelegate(scriptSource) {
   );
 }
 
-function runWrapper(hookPath) {
+function runWrapper(hookPath, extraEnv = {}) {
   // Isolated HOME/XDG so nothing leaks into the developer's live cache.
   const env = {
     ...process.env,
@@ -48,6 +51,8 @@ function runWrapper(hookPath) {
     XDG_RUNTIME_DIR: tmpDir,
     CLAUDE_PROJECT_DIR: projectDir,
   };
+  delete env.HH_CLIENT; // the client identity under test comes from the render or extraEnv only
+  Object.assign(env, extraEnv);
   return execFileSync('node', [hookPath], { input: STDIN_PAYLOAD, env }).toString();
 }
 
@@ -98,6 +103,32 @@ describe('assembler wrapper — delegate path', () => {
     const out = runWrapper(hookPath);
     assert.ok(out.includes('<rules-reminder>'));
     assert.ok(out.includes('produced no output'));
+  });
+});
+
+// The rendered shell hooks key a session as <client>--<id>. If the delegate
+// assembler is not told the client, it keys the same session by the raw id:
+// the assembler then misses the session's state.md and the trace hook misses
+// the manifest pointer, so every rule reference scores [] (OI-O30).
+describe('assembler wrapper — client identity reaches the delegate', () => {
+  const PRINT_CLIENT = 'process.stdout.write("client=" + (process.env.HH_CLIENT ?? "none"));';
+
+  it('passes the rendered client to the delegate', () => {
+    configureDelegate(PRINT_CLIENT);
+    const hookPath = installWrapper('/nonexistent/assembler.js', 'claude');
+    assert.equal(runWrapper(hookPath), 'client=claude');
+  });
+
+  it('passes no client when the placeholder is left unrendered (legacy raw-id layout)', () => {
+    configureDelegate(PRINT_CLIENT);
+    const hookPath = installWrapper('/nonexistent/assembler.js');
+    assert.equal(runWrapper(hookPath), 'client=none');
+  });
+
+  it('lets an inherited HH_CLIENT win, as the shell hooks do', () => {
+    configureDelegate(PRINT_CLIENT);
+    const hookPath = installWrapper('/nonexistent/assembler.js', 'claude');
+    assert.equal(runWrapper(hookPath, { HH_CLIENT: 'codex' }), 'client=codex');
   });
 });
 

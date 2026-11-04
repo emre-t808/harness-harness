@@ -1,16 +1,25 @@
 #!/bin/bash
 # hh-post-compact.sh — PostCompact hook
 #
-# Re-injects essential context from the filesystem after compaction. The
-# harness restores exactly what was saved and reports missing state — it
-# never synthesizes objectives. Payload-first identity (PRD §5.3).
+# Fires after context compaction and only records that it happened.
+# PostCompact has no injection channel (hookSpecificOutput.additionalContext
+# is accepted for SessionStart, UserPromptSubmit, PostToolUse, Stop and
+# others, not for PostCompact), so anything printed here is dead output.
+# SessionStart(source=compact) → hh-session-start.sh is the path that
+# restores session state after a compaction. Payload-first identity
+# (PRD §5.3): a missing or invalid identity writes nothing, never a shared
+# "unknown" row.
 #
-# Input:  JSON on stdin with { session_id, source: "manual"|"auto" }
-# Output: stdout (context re-injected into the client)
+# Input:  JSON on stdin with { session_id, trigger: "manual"|"auto", compact_summary }
+# Output: NONE (side-effect only)
+# Side effect: one PostCompact row in .harness/local/events.ndjson
 
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 HARNESS_DIR="${PROJECT_DIR}/.harness"
-SESSIONS_DIR="${HARNESS_DIR}/sessions"
+
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
 
 if [ ! -d "$HARNESS_DIR" ]; then
   exit 0
@@ -56,108 +65,5 @@ PYEOF
 cleanup_payload
 trap - EXIT HUP INT TERM
 
-CLIENT="${HH_CLIENT:-{{HH_CLIENT}}}"
-case "$CLIENT" in
-  claude|codex) STORAGE_KEY="${CLIENT}--${SESSION}" ;;
-  *) CLIENT=""; STORAGE_KEY="$SESSION" ;;
-esac
-
-# Project path configuration (package defaults preserved for other consumers):
-# .harness/config.json may set workStatusFile and routesDir project-relative.
-CONFIG=$(python3 - "$PROJECT_DIR" <<'PYEOF'
-import json, os, sys
-cfg = {}
-try:
-    with open(os.path.join(sys.argv[1], '.harness', 'config.json'), encoding='utf-8') as f:
-        cfg = json.load(f)
-except Exception:
-    pass
-ws = cfg.get('workStatusFile') if isinstance(cfg.get('workStatusFile'), str) else ''
-routes = cfg.get('routesDir') if isinstance(cfg.get('routesDir'), str) else ''
-print(ws or '.harness/memory/work-status.md')
-print(routes or '.harness/routes')
-PYEOF
-)
-WORK_STATUS_REL=$(printf '%s\n' "$CONFIG" | sed -n '1p')
-ROUTES_REL=$(printf '%s\n' "$CONFIG" | sed -n '2p')
-
-# Storage-key directory wins; unprefixed legacy state is readable only when
-# no other client claims the same raw id. On conflict, preserve both and say so.
-SESSION_DIR="${SESSIONS_DIR}/${STORAGE_KEY}"
-CONFLICT_DIR=""
-if [ ! -d "$SESSION_DIR" ] && [ "$STORAGE_KEY" != "$SESSION" ] && [ -d "${SESSIONS_DIR}/${SESSION}" ]; then
-  CONFLICT=""
-  for other in claude codex; do
-    [ "$other" = "$CLIENT" ] && continue
-    [ -d "${SESSIONS_DIR}/${other}--${SESSION}" ] && CONFLICT="${SESSIONS_DIR}/${other}--${SESSION}"
-  done
-  if [ -z "$CONFLICT" ]; then
-    SESSION_DIR="${SESSIONS_DIR}/${SESSION}"
-  else
-    CONFLICT_DIR="$CONFLICT"
-  fi
-fi
-
-echo "<context-restored after=\"compaction\" session=\"${SESSION}\">"
-echo ""
-
-# 1. Re-inject project identity (compact version)
-CLAUDE_MD="${PROJECT_DIR}/CLAUDE.md"
-if [ -f "$CLAUDE_MD" ]; then
-  echo "## Project Identity"
-  head -100 "$CLAUDE_MD"
-  echo ""
-fi
-
-# 2. Re-inject session state (objectives, decisions, blockers)
-STATE_FILE="${SESSION_DIR}/state.md"
-if [ -f "$STATE_FILE" ]; then
-  echo "## Session State (restored from filesystem)"
-  cat "$STATE_FILE"
-  echo ""
-else
-  echo "## Session State"
-  echo "No saved session state found for ${SESSION} — the harness restores what was saved; nothing was."
-  echo ""
-fi
-if [ -n "$CONFLICT_DIR" ]; then
-  echo "## Session State Conflict"
-  echo "Legacy state '${SESSIONS_DIR}/${SESSION}' is also claimed by '${CONFLICT_DIR}'."
-  echo "Both are preserved unmerged; resolve ownership manually."
-  echo ""
-fi
-
-# 3. Re-inject active work status (configured location)
-WORK_STATUS="${PROJECT_DIR}/${WORK_STATUS_REL}"
-if [ -f "$WORK_STATUS" ]; then
-  ACTIVE=$(sed -n '/## Active Work/,/^## /p' "$WORK_STATUS" | head -30)
-  if [ -n "$ACTIVE" ]; then
-    echo "## Active Work"
-    echo "$ACTIVE"
-    echo ""
-  fi
-fi
-
-# 4. Re-inject recent decisions
-DECISIONS_FILE="${SESSION_DIR}/decisions.md"
-if [ -f "$DECISIONS_FILE" ]; then
-  CONTENT=$(cat "$DECISIONS_FILE")
-  if [ "$CONTENT" != "## Decisions Log
-
-(no decisions yet)" ]; then
-    echo "## Recent Decisions"
-    tail -20 "$DECISIONS_FILE"
-    echo ""
-  fi
-fi
-
-# 5. Compact route hint (configured routes location)
-echo "## Context System"
-echo "Routes available in ${ROUTES_REL}/. The Smart Assembler will load"
-echo "task-specific rules on your next message. Update session state in"
-echo "${SESSION_DIR#"$PROJECT_DIR"/}/state.md if the working context has changed."
-
-echo ""
-echo "</context-restored>"
-
+type hh_log_event >/dev/null 2>&1 && hh_log_event PostCompact post-compact.sh end 0
 exit 0
