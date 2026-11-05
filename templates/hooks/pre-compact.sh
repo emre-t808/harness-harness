@@ -9,10 +9,15 @@
 #
 # Input:  JSON on stdin with { session_id, source: "manual"|"auto" }
 # Output: NONE (side-effect only)
+# Side effect: one PreCompact `end` row in .harness/local/events.ndjson
 
 PROJECT_DIR="$CLAUDE_PROJECT_DIR"
 HARNESS_DIR="${PROJECT_DIR}/.harness"
 SESSIONS_DIR="${HARNESS_DIR}/sessions"
+
+# Source event-log helper if available (non-fatal if missing).
+HH_HOOKS_LIB="${PROJECT_DIR}/.claude/hooks/lib"
+[ -f "$HH_HOOKS_LIB/event-log.sh" ] && . "$HH_HOOKS_LIB/event-log.sh"
 
 if [ ! -d "$HARNESS_DIR" ]; then
   exit 0
@@ -94,5 +99,6 @@ if [ -f "$TRACE_FILE" ]; then
   sync "$TRACE_FILE" 2>/dev/null || true
 fi
 
+type hh_log_event >/dev/null 2>&1 && hh_log_event PreCompact pre-compact.sh end 0
 echo "[hh-pre-compact] State saved for session ${SESSION}" >&2
 exit 0
