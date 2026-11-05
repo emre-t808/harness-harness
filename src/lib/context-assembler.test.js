@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRouteConfig, DEFAULT_BUDGET } from './context-assembler.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { assembleContext, getLastManifest, parseRouteConfig, DEFAULT_BUDGET } from './context-assembler.js';
+import { resolvePaths } from './paths.js';
 
 describe('parseRouteConfig', () => {
   it('returns only budget keys present in YAML (Bug 2)', () => {
@@ -63,5 +67,23 @@ describe('loadWorkStatus regex (Bug 3)', () => {
     assert.ok(match, 'regex should match');
     assert.ok(match[1].includes('Building feature X'));
     assert.ok(!match[1].includes('Done thing'), 'should not leak into next section');
+  });
+});
+
+// OI-R73: session-summary orders sidecar revisions by the later of the last
+// trace event and this stamp. Without it, a turn with no tool calls that
+// re-routes the session leaves two hashes at one instant and the evidence
+// store quarantines the session.
+describe('manifest generated_at (OI-R73)', () => {
+  it('stamps each manifest with the instant it was assembled', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ca-stamp-'));
+    try {
+      const before = Date.now();
+      assembleContext('general', { meta: { intent: 'general' }, budget: DEFAULT_BUDGET, sections: {} }, resolvePaths(dir));
+      const stamp = Date.parse(getLastManifest().generated_at);
+      assert.ok(stamp >= before && stamp <= Date.now(), `generated_at ${getLastManifest().generated_at}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
