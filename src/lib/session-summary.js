@@ -93,15 +93,24 @@ function parseInstant(value) {
   return Number.isFinite(time) ? time : null;
 }
 
-function resolveEventWindow(events, degradedReasons) {
+/**
+ * The session's time window. `lastEventAt` is the revision time the evidence
+ * store orders sidecars by, so it also counts the manifest's `generated_at`:
+ * a turn with no tool calls rewrites the manifest (and so the scored rules and
+ * `sourceHash`) without adding a trace event, and must still be a later
+ * revision, not an equal-time conflict (OI-R73). The stamp never stands in for
+ * missing events, and a manifest without one keeps the event-only window.
+ */
+function resolveEventWindow(events, manifest, degradedReasons) {
   const instants = events.map((evt) => parseInstant(evt.ts));
   if (events.length === 0 || instants.some((t) => t === null)) {
     degradedReasons.push('missing-event-timestamps');
     return { startedAt: null, lastEventAt: null };
   }
+  const manifestAt = parseInstant(manifest?.generated_at);
+  const last = Math.max(...instants, ...(manifestAt === null ? [] : [manifestAt]));
   const startedAt = new Date(Math.min(...instants)).toISOString();
-  const lastEventAt = new Date(Math.max(...instants)).toISOString();
-  return { startedAt, lastEventAt };
+  return { startedAt, lastEventAt: new Date(last).toISOString() };
 }
 
 function scoreSession(events, rules, signalsConfig, degradedReasons) {
@@ -140,7 +149,7 @@ export function buildSessionSummary(input) {
 
   if (signalsError) degradedReasons.push(`malformed-signals: ${signalsError}`);
   if (!manifest) degradedReasons.push('missing-manifest');
-  const { startedAt, lastEventAt } = resolveEventWindow(events, degradedReasons);
+  const { startedAt, lastEventAt } = resolveEventWindow(events, manifest, degradedReasons);
 
   const rules = collectRules(events, manifest);
   const usableSignals = signalsError ? {} : signalsConfig;

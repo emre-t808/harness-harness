@@ -564,6 +564,8 @@ export function assembleContext(intent, route, paths, userMessage = '', fileToRu
   lastManifest = {
     session: sessionId,
     turn: null,
+    // Revision time for a turn with no tool calls (session-summary, OI-R73).
+    generated_at: new Date().toISOString(),
     intent,
     route: intent.replace(/:/g, '-'),
     slots: manifestSlots,

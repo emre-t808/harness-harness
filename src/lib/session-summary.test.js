@@ -11,6 +11,7 @@ import {
   resolveStorageKey,
   validateSummaryV2,
 } from './session-summary.js';
+import { createEvidenceStore, upsertObservation } from './evidence-state.js';
 
 const NOW = new Date('2026-09-07T12:00:00Z');
 
@@ -195,4 +196,45 @@ test('discoverSessionArtifacts merges date fragments and guards legacy ambiguity
   } finally {
     fs.rmSync(tracesDir, { recursive: true, force: true });
   }
+});
+
+// OI-R73: the Stop hook rewrites the sidecar every turn. A turn with no tool
+// calls still rewrites the manifest (a new prompt re-routes the session), so
+// `rules` and `sourceHash` change while the last trace event does not. If the
+// revision time stays put, the store sees two hashes at one instant and
+// quarantines the session, which drops it out of the eligible count (OI-V37).
+// Replays live session claude--8a711e3a: last event 13:09:31, manifest
+// rewritten at 13:18:16 with other rules.
+test('a tool-less turn that re-routes the session replaces its observation, not quarantines it', () => {
+  const events = [event({ ts: '2026-09-07T09:00:00Z' }), event({ ts: '2026-09-07T10:00:00Z', tool: 'Read' })];
+  const before = build({ events, manifest: { rules_injected: ['TR-001'], generated_at: '2026-09-07T08:59:00.000Z' } });
+  const after = build({ events, manifest: { rules_injected: ['TR-002'], generated_at: '2026-09-07T11:00:00.000Z' } });
+  assert.notEqual(after.sidecar.sourceHash, before.sidecar.sourceHash, 'the rules are a scoring input');
+
+  const first = upsertObservation(createEvidenceStore('2026-09-01T00:00:00Z'), before.sidecar, { now: NOW });
+  assert.equal(first.outcome, 'accepted');
+  const second = upsertObservation(first.store, after.sidecar, { now: NOW });
+  assert.equal(second.outcome, 'replaced', second.reason);
+  const node = second.store.observations['claude--fixture-session'];
+  assert.equal(node.eligibility, 'eligible');
+  assert.equal(node.canonical.sourceHash, after.sidecar.sourceHash);
+  assert.deepEqual(node.canonical.scores.map((s) => s.rule), ['TR-002']);
+  assert.equal(before.sidecar.lastEventAt, '2026-09-07T10:00:00.000Z', 'an older manifest never moves the time back');
+  assert.equal(after.sidecar.lastEventAt, '2026-09-07T11:00:00.000Z');
+});
+
+test('the manifest stamp orders revisions but never enters the hash or invents a time', () => {
+  const plain = build({ manifest: { rules_injected: ['TR-001'] } });
+  const stamped = build({ manifest: { rules_injected: ['TR-001'], generated_at: '2026-09-07T11:00:00.000Z' } });
+  // Same scoring inputs, same hash: re-asking a prompt with the same rules is a no-op.
+  assert.equal(stamped.sidecar.sourceHash, plain.sidecar.sourceHash);
+  // A legacy manifest (no stamp) keeps the event-only window, byte for byte.
+  assert.equal(plain.sidecar.lastEventAt, '2026-09-07T10:00:00.000Z');
+  const junk = build({ manifest: { rules_injected: ['TR-001'], generated_at: 'not-a-time' } });
+  assert.equal(junk.sidecar.lastEventAt, '2026-09-07T10:00:00.000Z');
+  // No trace events: still degraded with no dates, even with a stamped manifest.
+  const empty = build({ events: [], manifest: { rules_injected: ['TR-001'], generated_at: '2026-09-07T11:00:00.000Z' } });
+  assert.equal(empty.sidecar.measurementStatus, 'degraded');
+  assert.equal(empty.sidecar.lastEventAt, null);
+  assert.equal(empty.sidecar.startedAt, null);
 });
