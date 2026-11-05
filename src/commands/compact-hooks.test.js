@@ -3,11 +3,13 @@
  *
  * Why: the PreCompact `end` row in .harness/local/events.ndjson is the only
  * evidence that a compaction started, and the reliability runbook needs it
- * to show compaction plus restoration (gap #1). The Part T template dropped
- * the event-log helper, so the installed hook went silent (OI-R72) while
- * PostCompact kept logging. These tests pin the row down: exactly one `end`
- * row keyed by the raw session id, and none when the identity is missing or
- * invalid (never a shared "unknown" row).
+ * to show compaction plus restoration (gap #1). The template never sourced
+ * the event-log helper, so once the install replaced the hand-written hook
+ * (which logged) with the template render, PreCompact went silent (OI-R72)
+ * while PostCompact kept logging. These tests pin the row down: exactly one
+ * `end` row keyed by the raw session id, none when the identity is missing
+ * or invalid (never a shared "unknown" row), and nothing at all in a
+ * project the harness was never set up in.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -72,5 +74,11 @@ describe('pre-compact.sh — event row', () => {
     runPreCompact({ trigger: 'auto' });
     runPreCompact({ session_id: '../escape', trigger: 'auto' });
     assert.deepEqual(loggedEvents(), []);
+  });
+
+  it('creates nothing in a project without .harness', () => {
+    fs.rmSync(path.join(projectDir, '.harness'), { recursive: true });
+    runPreCompact({ session_id: 'sess-pc', trigger: 'auto' });
+    assert.equal(fs.existsSync(path.join(projectDir, '.harness')), false);
   });
 });
