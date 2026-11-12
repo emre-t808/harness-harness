@@ -59,7 +59,10 @@ export function parseOverrides(content, forceMode = false) {
     }
 
     if (currentSection === 'budget' && line.startsWith('- ')) {
-      const budgetMatch = line.match(/^- (.+?):\s*(.+)/);
+      // The route ends at the last ': ' before 'utilization' (OI-R64): a lazy
+      // '(.+?):' split "coding:meta: utilization …" at the first colon, so the
+      // four colon routes looked up coding.md, writing.md … and were skipped.
+      const budgetMatch = line.match(/^- (.+?):\s+(utilization\b.*)$/);
       if (budgetMatch) {
         const statusLine = findStatusLine(lines, i);
         if (statusLine && statusLine.includes('approved')) {

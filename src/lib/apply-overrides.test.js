@@ -93,6 +93,28 @@ describe('parseOverrides', () => {
     assert.equal(result.promotions.length, 1);
     assert.equal(result.promotions[0].rule, 'API-001');
   });
+
+  // OI-R64: route names carry colons (coding:meta). The old lazy '(.+?):' split
+  // at the first colon, so 4 of the 7 owner-approved budget changes looked up
+  // coding.md / writing.md, found nothing and were skipped without a word.
+  // Both fixtures are lines from the live route-overrides.md (2026-11-12).
+  function budgetBlock(entry) {
+    return ['### Budget Rebalancing', entry, '  Status: approved', '  Reviewed by: owner', ''].join('\n');
+  }
+
+  it('keeps the whole colon route name in a budget change (coding:meta)', () => {
+    const { budgetChanges } = parseOverrides(budgetBlock('- coding:meta: utilization 37% → decrease route_context by 5%'));
+    assert.equal(budgetChanges.length, 1);
+    assert.equal(budgetChanges[0].route, 'coding:meta');
+    assert.equal(budgetChanges[0].description, 'utilization 37% → decrease route_context by 5%');
+  });
+
+  it('still parses a plain route name in a budget change (analyzing)', () => {
+    const { budgetChanges } = parseOverrides(budgetBlock('- analyzing: utilization 26% → decrease route_context by 5%'));
+    assert.equal(budgetChanges.length, 1);
+    assert.equal(budgetChanges[0].route, 'analyzing');
+    assert.equal(budgetChanges[0].description, 'utilization 26% → decrease route_context by 5%');
+  });
 });
 
 // ---------------------------------------------------------------------------
