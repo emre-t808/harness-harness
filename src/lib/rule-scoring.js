@@ -95,21 +95,31 @@ function filterTriggerEvents(traceEvents, trigger) {
 }
 
 /**
- * Session-level evidence hierarchy, first match wins. `violated` trumps all
- * positives — behavioral truth beats citation. A rule WITH signals whose
- * triggers never fired scores null ('not-applicable'): it is excluded from
- * aggregation rather than logged as a false-negative 0.
+ * Session-level evidence hierarchy, first match wins (D186, OI-R78).
+ *
+ * A rule WITH signals is scored by what the session did: a citation adds to a
+ * behavioural result (1.5 vs 0.5) but never scores on its own. Citing FO-005
+ * in a harness session that wrote no PRD used to score 1.0 'referenced'; it is
+ * now 'not-applicable' (null, excluded from aggregation), and a fired check
+ * with no compliant result is 'applicable-unmet' 0.0 even when cited.
+ * 'prevented-mistake' counts only when one of the rule's checks fired.
+ *
+ * A rule WITHOUT signals has no behavioural evidence to weigh, so a citation
+ * remains its only score ('referenced' 1.0), as before.
  */
 function assembleScore(sig, isReferenced, hasSignals, prevented) {
+  if (!hasSignals) {
+    if (prevented) return { score: 2.0, evidence: 'prevented-mistake' };
+    if (isReferenced) return { score: 1.0, evidence: 'referenced' };
+    return { score: 0.0, evidence: 'ignored' };
+  }
   if (sig.violated) return { score: 0.0, evidence: 'violated' };
-  if (prevented) return { score: 2.0, evidence: 'prevented-mistake' };
+  if (prevented && sig.fired) return { score: 2.0, evidence: 'prevented-mistake' };
   if (sig.content) return { score: isReferenced ? 1.75 : 1.0, evidence: 'content-verified' };
   if (sig.behavioral && isReferenced) return { score: 1.5, evidence: 'verified-compliance' };
-  if (isReferenced) return { score: 1.0, evidence: 'referenced' };
   if (sig.behavioral) return { score: 0.5, evidence: 'behavioral-compliance' };
   if (sig.fired) return { score: 0.0, evidence: 'applicable-unmet' };
-  if (hasSignals) return { score: null, evidence: 'not-applicable' };
-  return { score: 0.0, evidence: 'ignored' };
+  return { score: null, evidence: 'not-applicable' };
 }
 
 function detectPreventedMistake(traceEvents, ruleId) {
