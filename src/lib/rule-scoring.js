@@ -20,9 +20,10 @@ export function scoreRuleCompliance(traceEvents, injectedRules) {
 
   for (const rule of injectedRules) {
     const ruleId = typeof rule === 'string' ? rule : rule.id;
-    const signals = typeof rule === 'object' && Array.isArray(rule.behavioral_signals) && rule.behavioral_signals.length > 0
-      ? rule.behavioral_signals
-      : null;
+    const declared = typeof rule === 'object' && Array.isArray(rule.behavioral_signals) ? rule.behavioral_signals : [];
+    // D193 (OI-R81): a rule whose only signals are applicable_only declares no
+    // behaviour for D186 to weigh, so it is scored like a rule without signals.
+    const signals = declared.some(s => !s?.expect?.applicable_only) ? declared : null;
 
     const isReferenced = traceEvents.some(evt =>
       Array.isArray(evt.referenced_context) && evt.referenced_context.includes(ruleId)
@@ -105,7 +106,8 @@ function filterTriggerEvents(traceEvents, trigger) {
  * 'prevented-mistake' counts only when one of the rule's checks fired.
  *
  * A rule WITHOUT signals has no behavioural evidence to weigh, so a citation
- * remains its only score ('referenced' 1.0), as before.
+ * remains its only score ('referenced' 1.0), as before. A rule whose only
+ * signals are applicable_only counts as a rule without signals (D193).
  */
 function assembleScore(sig, isReferenced, hasSignals, prevented) {
   if (!hasSignals) {
