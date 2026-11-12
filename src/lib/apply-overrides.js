@@ -186,7 +186,7 @@ function identityBlock(content) {
 
 function routeContextLine(content, ruleId) {
   const rcIdx = content.indexOf('## Route Context');
-  return rcIdx >= 0 ? content.slice(rcIdx).match(new RegExp(`^- .*${ruleId}.*$`, 'm')) : null;
+  return rcIdx >= 0 ? content.slice(rcIdx).match(new RegExp(`^- .*${escapeRe(ruleId)}.*$`, 'm')) : null;
 }
 
 /**
@@ -238,7 +238,7 @@ function promoteInRoute(rfPath, ruleId, newLine, dryRun) {
 
   const rcIdx = content.indexOf('## Route Context');
   if (rcIdx >= 0) {
-    const ruleLineRe = new RegExp(`^- .*${ruleId}.*\n`, 'gm');
+    const ruleLineRe = new RegExp(`^- .*${escapeRe(ruleId)}.*\n`, 'gm');
     content = content.slice(0, rcIdx) + content.slice(rcIdx).replace(ruleLineRe, '');
   }
 

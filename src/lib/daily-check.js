@@ -275,6 +275,16 @@ export async function runAggregation(paths) {
         // Snapshot all route configs for this rule before mutating, then apply.
         try {
           if (proposal.kind === 'promote') {
+            // A promotion that cannot carry the rule's text is refused (OI-R65):
+            // log the refusal, take no snapshot and start no cooldown.
+            const preview = applyPromotion(proposal.rule, paths, true);
+            if (preview.refused) {
+              logEvent(paths.eventsLogFile, {
+                hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+                decision: { action: 'auto-promote-refused', rule: proposal.rule, reason: preview.refused, event_id: eventId },
+              });
+              continue;
+            }
             // applyPromotion edits every route file; snapshot them all.
             const routeFiles = fs.existsSync(paths.routesDir)
               ? fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'))

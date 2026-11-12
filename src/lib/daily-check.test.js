@@ -424,7 +424,7 @@ describe('scorer-version boundary in the daily pipeline', () => {
     return { dir, paths, store };
   }
 
-  it('readiness that names older-scorer sessions gives a named not-ready reason', () => {
+  it('readiness on an older scorer gives a named not-ready reason', () => {
     const { dir, paths, store } = projectWithStore('behavioral-v2');
     fs.writeFileSync(paths.reliabilityReadinessFile, JSON.stringify({
       schemaVersion: 2, evidenceEpoch: store.epoch.startedAt, scorerVersion: 'behavioral-v2',
