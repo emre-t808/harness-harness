@@ -134,53 +134,116 @@ export function applyDemotion(routeConfigPath, ruleId, dryRun = false) {
   return { changed: true, description: `Demoted ${ruleId} to Skip in ${path.basename(routeConfigPath)}` };
 }
 
+function escapeRe(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function catalogueTitle(ruleId, catalogueDir) {
+  const heading = new RegExp(`^#{2,3} ${escapeRe(ruleId)}: (.+?)\\s*$`, 'm');
+  for (const f of fs.readdirSync(catalogueDir).filter(n => n.endsWith('.md')).sort()) {
+    const text = fs.readFileSync(path.join(catalogueDir, f), 'utf8');
+    const m = text.match(heading);
+    if (!m) continue;
+    const entry = text.slice(m.index + m[0].length).split(/\n#{1,3} /)[0];
+    const antiPattern = entry.match(/^\*\*Anti-pattern:\*\*\s*(.+?)\s*$/m);
+    return { title: m[1], antiPattern: antiPattern ? antiPattern[1] : null };
+  }
+  return null;
+}
+
+function routeGuidance(ruleId, title, routeFiles) {
+  const line = new RegExp(`^- ${escapeRe(ruleId)}: ${escapeRe(title)} — (.+?)\\s*(?:<!--.*)?$`, 'm');
+  for (const rfPath of routeFiles) {
+    const m = fs.readFileSync(rfPath, 'utf8').match(line);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * The line a promotion inserts into a route that has no line for the rule:
+ * `- <ID>: <title> — <summary>`, the catalogue form RID-002 checks. A bare
+ * `- <ID>` gives the model the ID without the rule (OI-R65), so when the
+ * catalogue or a summary is out of reach this returns a refusal reason.
+ */
+export function catalogueRuleLine(ruleId, paths, routeFiles = []) {
+  const dir = paths.rulesCatalogDir;
+  if (!dir || !fs.existsSync(dir)) {
+    return { error: `no rule catalogue reachable (set "rulesCatalogDir" in .harness/config.json, e.g. "context/anti-patterns"), so ${ruleId}'s text is unknown` };
+  }
+  const entry = catalogueTitle(ruleId, dir);
+  if (!entry) return { error: `${ruleId} has no "## ${ruleId}:" heading in ${dir}` };
+  const summary = routeGuidance(ruleId, entry.title, routeFiles) ?? entry.antiPattern;
+  if (!summary) {
+    return { error: `${ruleId} has no one-line summary (no route line carries one and its catalogue entry has no **Anti-pattern:** line); write its Identity line by hand` };
+  }
+  return { line: `- ${ruleId}: ${entry.title} — ${summary}` };
+}
+
+function identityBlock(content) {
+  return content.match(/## Identity\n([\s\S]*?)(?=\n## )/);
+}
+
+function routeContextLine(content, ruleId) {
+  const rcIdx = content.indexOf('## Route Context');
+  return rcIdx >= 0 ? content.slice(rcIdx).match(new RegExp(`^- .*${ruleId}.*$`, 'm')) : null;
+}
+
+/**
+ * Promote a rule into every route's Identity block. A route that already
+ * carries the rule in Route Context has that line MOVED, text intact. A route
+ * with no line gets the catalogue line; if that cannot be built, the whole
+ * promotion is refused and nothing is written (OI-R65).
+ */
 export function applyPromotion(ruleId, paths, dryRun = false) {
+  const routeFiles = fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'))
+    .map(f => path.join(paths.routesDir, f));
+  const needsNewLine = routeFiles.some((rfPath) => {
+    const content = fs.readFileSync(rfPath, 'utf8');
+    const identity = identityBlock(content);
+    return identity && !identity[1].includes(ruleId) && !routeContextLine(content, ruleId);
+  });
+  let newLine = null;
+  if (needsNewLine) {
+    const built = catalogueRuleLine(ruleId, paths, routeFiles);
+    if (built.error) {
+      return { changed: false, refused: built.error, descriptions: [`refused ${ruleId}: ${built.error}`] };
+    }
+    newLine = built.line;
+  }
   const descriptions = [];
-  const routeFiles = fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'));
+  for (const rfPath of routeFiles) {
+    const desc = promoteInRoute(rfPath, ruleId, newLine, dryRun);
+    if (desc) descriptions.push(desc);
+  }
+  return { changed: descriptions.length > 0, descriptions };
+}
+
+function promoteInRoute(rfPath, ruleId, newLine, dryRun) {
+  const rf = path.basename(rfPath);
+  let content = fs.readFileSync(rfPath, 'utf8');
+  const identityMatch = identityBlock(content);
+  if (!identityMatch) return null;
+  if (identityMatch[1].includes(ruleId)) return `${rf}: ${ruleId} already in Identity`;
+
+  // MOVE the rule's own line into Identity, text intact — do not synthesize a
+  // replacement. Note `.*` not `.+`: a rule line starts "- GA-001: …", so there
+  // is nothing before the ID, and `.+` never matched (the rule was duplicated).
   const today = new Date().toISOString().slice(0, 10);
+  const existing = routeContextLine(content, ruleId);
+  const promotedLine = `${existing ? existing[0] : newLine} <!-- promoted ${today}: high effectiveness across routes -->`;
 
-  for (const rf of routeFiles) {
-    const rfPath = path.join(paths.routesDir, rf);
-    let content = fs.readFileSync(rfPath, 'utf8');
+  const insertAt = content.indexOf(identityMatch[0]) + identityMatch[0].length;
+  content = content.slice(0, insertAt) + `\n${promotedLine}` + content.slice(insertAt);
 
-    const identityMatch = content.match(/## Identity\n([\s\S]*?)(?=\n## )/);
-    if (identityMatch && identityMatch[1].includes(ruleId)) {
-      descriptions.push(`${rf}: ${ruleId} already in Identity`);
-      continue;
-    }
-
-    if (identityMatch) {
-      // MOVE the rule's own line into Identity, text intact — do not synthesize a
-      // replacement. "- GA-001: promoted to Identity layer (high effectiveness)" tells
-      // the model precisely nothing about what GA-001 requires; promoting a rule must
-      // not delete it. Note `.*` not `.+`: a rule line starts "- GA-001: …", so there is
-      // nothing before the ID, and the old `.+` never matched — which meant the rule was
-      // duplicated into Identity instead of moved out of Route Context.
-      const routeContextIdx = content.indexOf('## Route Context');
-      const existing = routeContextIdx >= 0
-        ? content.slice(routeContextIdx).match(new RegExp(`^- .*${ruleId}.*$`, 'm'))
-        : null;
-      const promotedLine = existing
-        ? `${existing[0]} <!-- promoted ${today}: high effectiveness across routes -->`
-        : `- ${ruleId} <!-- promoted ${today}: high effectiveness across routes -->`;
-
-      const insertAt = content.indexOf(identityMatch[0]) + identityMatch[0].length;
-      content = content.slice(0, insertAt) + `\n${promotedLine}` + content.slice(insertAt);
-
-      const rcIdx = content.indexOf('## Route Context');
-      if (rcIdx >= 0) {
-        const ruleLineRe = new RegExp(`^- .*${ruleId}.*\n`, 'gm');
-        const before = content.slice(0, rcIdx);
-        const after = content.slice(rcIdx).replace(ruleLineRe, '');
-        content = before + after;
-      }
-
-      if (!dryRun) fs.writeFileSync(rfPath, content, 'utf8');
-      descriptions.push(`${rf}: promoted ${ruleId} to Identity`);
-    }
+  const rcIdx = content.indexOf('## Route Context');
+  if (rcIdx >= 0) {
+    const ruleLineRe = new RegExp(`^- .*${ruleId}.*\n`, 'gm');
+    content = content.slice(0, rcIdx) + content.slice(rcIdx).replace(ruleLineRe, '');
   }
 
-  return { changed: descriptions.length > 0, descriptions };
+  if (!dryRun) fs.writeFileSync(rfPath, content, 'utf8');
+  return `${rf}: promoted ${ruleId} to Identity`;
 }
 
 export function applyBudgetChange(routeConfigPath, newBudget, dryRun = false) {

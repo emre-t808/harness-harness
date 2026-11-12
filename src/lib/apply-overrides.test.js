@@ -219,3 +219,65 @@ describe('applyPromotion — preserves the rule it promotes', () => {
     assert.ok(ruleIdx > identityIdx && ruleIdx < routeCtxIdx, 'GA-001 should sit in Identity');
   });
 });
+
+// OI-R65: a route with no line for the promoted rule used to get a bare
+// "- SEC-001 <!-- promoted … -->": the model saw an ID and no rule. The line
+// must be the catalogue form RID-002 checks, or the promotion is refused.
+describe('applyPromotion — a route with no line gets the rule text, or nothing', () => {
+  function project({ catalogue = true, otherRouteLine = null } = {}) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-promote-cat-'));
+    const routesDir = path.join(root, 'routes');
+    fs.mkdirSync(routesDir);
+    const route = (extra) => ['## Identity', 'Project identity.', '', '## Route Context', '### Must Load', ...extra, '', '## Working Memory', ''].join('\n');
+    fs.writeFileSync(path.join(routesDir, 'general.md'), route(['- FO-009: Files in Root — never root']));
+    fs.writeFileSync(path.join(routesDir, 'coding-meta.md'), route(otherRouteLine ? [otherRouteLine] : []));
+    let rulesCatalogDir = null;
+    if (catalogue) {
+      rulesCatalogDir = path.join(root, 'anti-patterns');
+      fs.mkdirSync(rulesCatalogDir);
+      fs.writeFileSync(path.join(rulesCatalogDir, 'security.md'), [
+        '# Security', '', '## SEC-001: Skipping Security Audit After Integration', '',
+        '**Source:** Learning', '', '**Anti-pattern:** Adding a new API without running a security audit.', '',
+        '## SEC-002: Other', '', '**Anti-pattern:** Not this one.', '',
+      ].join('\n'));
+    }
+    return { routesDir, rulesCatalogDir };
+  }
+  const read = (paths, f) => fs.readFileSync(path.join(paths.routesDir, f), 'utf8');
+
+  it('inserts "- <ID>: <title> — <summary>" from the catalogue, never a bare ID', () => {
+    const paths = project();
+    const result = applyPromotion('SEC-001', paths, false);
+    assert.equal(result.changed, true);
+    const out = read(paths, 'general.md');
+    assert.match(out, /^- SEC-001: Skipping Security Audit After Integration — Adding a new API without running a security audit\. <!-- promoted /m);
+    assert.doesNotMatch(out, /^- SEC-001 <!--/m, 'a bare ID line is the bug');
+  });
+
+  it("prefers another route's guidance for the summary, and moves an existing line as before", () => {
+    const paths = project({ otherRouteLine: '- SEC-001: Skipping Security Audit After Integration — run /security-audit after any new integration' });
+    applyPromotion('SEC-001', paths, false);
+    assert.match(read(paths, 'general.md'), /^- SEC-001: Skipping Security Audit After Integration — run \/security-audit after any new integration <!-- promoted /m);
+    const meta = read(paths, 'coding-meta.md');
+    assert.equal((meta.match(/SEC-001/g) || []).length, 1, 'moved, not duplicated');
+    assert.ok(meta.indexOf('SEC-001') < meta.indexOf('## Route Context'));
+  });
+
+  it('refuses the whole promotion with a reason when the catalogue is out of reach', () => {
+    const paths = project({ catalogue: false, otherRouteLine: '- SEC-001: Skipping Security Audit After Integration — guidance' });
+    const before = [read(paths, 'general.md'), read(paths, 'coding-meta.md')];
+    const result = applyPromotion('SEC-001', paths, false);
+    assert.equal(result.changed, false);
+    assert.match(result.refused, /rulesCatalogDir/);
+    assert.match(result.descriptions[0], /^refused SEC-001: /);
+    assert.deepEqual([read(paths, 'general.md'), read(paths, 'coding-meta.md')], before, 'nothing is written, not even the routes that could move a line');
+  });
+
+  it('refuses when the catalogue has the rule but no summary exists anywhere', () => {
+    const paths = project();
+    fs.writeFileSync(path.join(paths.rulesCatalogDir, 'security.md'), '## SEC-001: Title Only\n\n**The Mistake:**\n');
+    const result = applyPromotion('SEC-001', paths, false);
+    assert.equal(result.changed, false);
+    assert.match(result.refused, /no one-line summary/);
+  });
+});

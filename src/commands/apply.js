@@ -57,7 +57,7 @@ export async function apply(projectDir, flags) {
 
   for (const p of overrides.promotions) {
     const result = applyPromotion(p.rule, paths, dryRun);
-    for (const desc of result.descriptions) console.log(`  ✓ ${desc}`);
+    for (const desc of result.descriptions) console.log(`  ${result.refused ? '✗' : '✓'} ${desc}`);
     if (result.changed) appliedIndices.push(p.lineIndex);
   }
 

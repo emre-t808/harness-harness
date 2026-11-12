@@ -37,6 +37,23 @@ function resolveRoutesDir(projectDir, harnessDir) {
 }
 
 /**
+ * The project's rule catalogue (`"rulesCatalogDir"` in .harness/config.json,
+ * e.g. "context/anti-patterns"): Markdown files with `## <ID>: <title>`
+ * headings. Null when unset — callers that need a rule's text must refuse
+ * rather than guess (OI-R65).
+ */
+function resolveRulesCatalogDir(projectDir, harnessDir) {
+  try {
+    const cfg = JSON.parse(readFileSync(join(harnessDir, 'config.json'), 'utf8'));
+    const dir = typeof cfg.rulesCatalogDir === 'string' ? cfg.rulesCatalogDir.trim() : '';
+    if (dir) return isAbsolute(dir) ? dir : join(projectDir, dir);
+  } catch {
+    // No config yet, or malformed: no catalogue.
+  }
+  return null;
+}
+
+/**
  * Build a paths object for a given project directory.
  * @param {string} projectDir - Absolute path to the project root
  * @returns {object} All harness paths
@@ -57,6 +74,7 @@ export function resolvePaths(projectDir) {
 
     // Routes (configurable — see resolveRoutesDir)
     routesDir: resolveRoutesDir(projectDir, harnessDir),
+    rulesCatalogDir: resolveRulesCatalogDir(projectDir, harnessDir),
 
     // Memory
     memoryDir: join(harnessDir, 'memory'),
