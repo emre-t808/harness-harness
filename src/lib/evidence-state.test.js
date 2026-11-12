@@ -9,6 +9,7 @@ import {
   createEvidenceStore,
   computeGeneration,
   eligibleObservations,
+  refreshEligibility,
   loadEvidenceState,
   rebuildRatings,
   resolveObservation,
@@ -16,6 +17,7 @@ import {
   upsertObservation,
 } from './evidence-state.js';
 import { withFileLockAsync } from './file-lock.js';
+import { SCORER_VERSION } from './session-summary.js';
 
 const NOW = new Date('2026-09-10T12:00:00Z');
 const EPOCH = '2026-09-01T00:00:00Z';
@@ -29,7 +31,7 @@ function summary(overrides = {}) {
     startedAt: '2026-09-02T10:00:00Z',
     lastEventAt: '2026-09-02T11:00:00Z',
     route: 'general',
-    scorerVersion: 'behavioral-v2',
+    scorerVersion: SCORER_VERSION,
     signalsHash: 'a'.repeat(64),
     sourceHash: 'b'.repeat(64),
     measurementStatus: 'valid',
@@ -285,5 +287,47 @@ describe('async lock lifetime', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// OI-R79 / D190: nothing re-scores old sessions and ratings are cumulative Elo
+// with no decay, so observations from an older scorer would keep voting in every
+// later week. Changing the scorer (D186) only counts if they stop being eligible.
+describe('scorer-version boundary', () => {
+  const OLD = 'behavioral-v2';
+
+  it('an older-scorer observation is report-only; a current-scorer one is eligible', () => {
+    let store = upsertObservation(freshStore(), summary({ scorerVersion: OLD }), { now: NOW }).store;
+    store = upsertObservation(store, summary({ sessionId: 's2', sourceHash: 'c'.repeat(64) }), { now: NOW }).store;
+    assert.equal(store.observations['claude--s1'].eligibility, 'report-only');
+    assert.equal(store.observations['claude--s1'].eligibilityReason, 'older-scorer-version');
+    assert.equal(store.observations['claude--s2'].eligibility, 'eligible');
+    assert.deepEqual(eligibleObservations(store).map((o) => o.sessionId), ['s2']);
+  });
+
+  it('a mixed store rates only from current-scorer evidence', () => {
+    let store = freshStore();
+    store = upsertObservation(store, summary({ scorerVersion: OLD, scores: [{ rule: 'TR-001', score: 1.0, evidence: 'referenced' }] }), { now: NOW }).store;
+    store = upsertObservation(store, summary({
+      sessionId: 's2', sourceHash: 'c'.repeat(64), scores: [{ rule: 'TR-002', score: 0.5, evidence: 'behavioral-compliance' }],
+    }), { now: NOW }).store;
+    const rebuilt = rebuildRatings(store);
+    assert.equal(rebuilt.rules['TR-001'], undefined, 'the old citation must not rate');
+    assert.equal(rebuilt.rules['TR-002'].sessions_injected, 1);
+  });
+
+  it('refreshEligibility demotes a node stored as eligible before the bump', () => {
+    const stored = upsertObservation(freshStore(), summary(), { now: NOW }).store;
+    // Simulate the live store: a node ingested under the old scorer, marked eligible then.
+    stored.observations['claude--s1'] = {
+      ...stored.observations['claude--s1'],
+      canonical: { ...stored.observations['claude--s1'].canonical, scorerVersion: OLD },
+    };
+    assert.equal(stored.observations['claude--s1'].eligibility, 'eligible');
+    const refreshed = refreshEligibility(stored);
+    assert.equal(refreshed.observations['claude--s1'].eligibility, 'report-only');
+    assert.equal(refreshed.observations['claude--s1'].eligibilityReason, 'older-scorer-version');
+    assert.notEqual(computeGeneration(refreshed), computeGeneration(stored), 'ratings rebuilt after a refresh carry a new generation');
+    assert.equal(stored.observations['claude--s1'].eligibility, 'eligible', 'pure: the input store is untouched');
   });
 });

@@ -13,7 +13,11 @@ import {
   runAggregation,
   runDailyCheckIfDue,
   AGGREGATION_INTERVAL_HOURS,
+  checkApplyReadiness,
+  runEvidencePipeline,
 } from './daily-check.js';
+import { createEvidenceStore, saveEvidenceState, upsertObservation } from './evidence-state.js';
+import { SCORER_VERSION } from './session-summary.js';
 import { resolvePaths } from './paths.js';
 
 function createTempDir() {
@@ -395,5 +399,54 @@ describe('runDailyCheckIfDue', () => {
     const result = await runDailyCheckIfDue(tmpDir);
     assert.equal(result.ran, true);
     assert.equal(result.sessionsAnalyzed, 1);
+  });
+});
+
+// OI-R79 / D190: after a scorer bump, readiness built from older-scorer
+// sessions must say why it is not ready, and the pipeline must stop rating
+// observations the store marked eligible before the bump.
+describe('scorer-version boundary in the daily pipeline', () => {
+  function projectWithStore(scorerVersion) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-boundary-'));
+    fs.mkdirSync(path.join(dir, '.harness', 'local'), { recursive: true });
+    const paths = resolvePaths(dir);
+    let store = createEvidenceStore('2026-11-03T00:00:00Z');
+    store = upsertObservation(store, {
+      schemaVersion: 2, client: 'claude', sessionId: 's1', storageKey: 'claude--s1',
+      startedAt: '2026-11-04T10:00:00Z', lastEventAt: '2026-11-04T11:00:00Z', route: 'general',
+      scorerVersion: SCORER_VERSION, signalsHash: 'a'.repeat(64), sourceHash: 'b'.repeat(64),
+      measurementStatus: 'valid', degradedReasons: [],
+      scores: [{ rule: 'FO-005', score: 1.0, evidence: 'referenced' }],
+    }, { now: new Date('2026-11-05T00:00:00Z') }).store;
+    // The live store's shape: ingested (and marked eligible) under the old scorer.
+    store.observations['claude--s1'].canonical.scorerVersion = scorerVersion;
+    saveEvidenceState(paths, store);
+    return { dir, paths, store };
+  }
+
+  it('readiness that names older-scorer sessions gives a named not-ready reason', () => {
+    const { dir, paths, store } = projectWithStore('behavioral-v2');
+    fs.writeFileSync(paths.reliabilityReadinessFile, JSON.stringify({
+      schemaVersion: 2, evidenceEpoch: store.epoch.startedAt, scorerVersion: 'behavioral-v2',
+    }));
+    const verdict = checkApplyReadiness(paths, store);
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reasons.join(' '), new RegExp(`behavioral-v2 is not the current scorer ${SCORER_VERSION}`));
+    fs.writeFileSync(paths.reliabilityReadinessFile, JSON.stringify({
+      schemaVersion: 2, evidenceEpoch: store.epoch.startedAt, scorerVersion: SCORER_VERSION,
+    }));
+    assert.deepEqual(checkApplyReadiness(paths, store), { ok: true, reasons: [] });
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('the pipeline re-derives eligibility before rebuilding ratings', async () => {
+    const { dir, paths } = projectWithStore('behavioral-v2');
+    const { ratingState, store } = await runEvidencePipeline(paths, () => {});
+    assert.equal(store.observations['claude--s1'].eligibility, 'report-only');
+    assert.equal(store.observations['claude--s1'].eligibilityReason, 'older-scorer-version');
+    assert.deepEqual(ratingState.rules, {}, 'the old citation must not rate');
+    const saved = JSON.parse(fs.readFileSync(paths.evidenceStateFile, 'utf8'));
+    assert.equal(saved.observations['claude--s1'].eligibility, 'report-only', 'persisted, so the contract check sees it');
+    fs.rmSync(dir, { recursive: true });
   });
 });

@@ -12,7 +12,9 @@ import fs from 'fs';
 import path from 'path';
 import { scoreRuleCompliance } from './rule-scoring.js';
 
-export const SCORER_VERSION = 'behavioral-v2';
+// behavioral-v3 (D186): a citation alone no longer scores a rule with signals.
+// Observations scored by an older version are report-only (evidence-state.js).
+export const SCORER_VERSION = 'behavioral-v3';
 export const SUMMARY_SCHEMA_VERSION = 2;
 export const KNOWN_CLIENTS = ['claude', 'codex'];
 

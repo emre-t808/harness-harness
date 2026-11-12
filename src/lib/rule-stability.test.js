@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { completedWeeks, evaluateStability, weekStartOf } from './rule-stability.js';
 import { createEvidenceStore, upsertObservation } from './evidence-state.js';
+import { SCORER_VERSION } from './session-summary.js';
 
 const EPOCH_MONDAY = '2026-08-03T00:00:00Z'; // a Monday 00:00 UTC
 const NOW = new Date('2026-09-02T12:00:00Z'); // Wednesday in the week of Aug 31
@@ -21,7 +22,7 @@ function observation(sessionId, lastEventAt, scores) {
     startedAt: lastEventAt,
     lastEventAt,
     route: 'general',
-    scorerVersion: 'behavioral-v2',
+    scorerVersion: SCORER_VERSION,
     signalsHash: 'a'.repeat(64),
     sourceHash: `${hashCounter}`.padStart(64, '0'),
     measurementStatus: 'valid',
@@ -134,5 +135,24 @@ describe('evaluateStability', () => {
     const stability = evaluateStability(store, { now: NOW });
     assert.equal(stability.rules['TR-001'].latestReason, 'insufficient-evidence');
     assert.equal(stability.rules['TR-001'].consecutiveQualifiedWeeks, 0);
+  });
+});
+
+// OI-R79 / D190: a calendar boundary does not make a week clean, because each
+// week rates from a cumulative snapshot. Only excluding old-scorer evidence does.
+describe('evaluateStability — scorer-version boundary', () => {
+  it('weeks qualify only from current-scorer observations in a mixed store', () => {
+    let store = createEvidenceStore(EPOCH_MONDAY);
+    for (const week of [0, 1, 2, 3]) {
+      for (let i = 0; i < 3; i += 1) {
+        const ts = new Date(Date.parse(EPOCH_MONDAY) + week * 7 * 86400000 + (2 + i) * 86400000).toISOString();
+        const record = { ...observation(`w${week}s${i}`, ts, CONTRAST_SCORES), scorerVersion: week < 3 ? 'behavioral-v2' : SCORER_VERSION };
+        store = upsertObservation(store, record, { now: NOW }).store;
+      }
+    }
+    const stability = evaluateStability(store, { now: NOW });
+    assert.deepEqual(stability.weeklyDetail.map((w) => w.hadEvidence), [false, false, false, true]);
+    assert.equal(stability.rules['TR-001'].consecutiveQualifiedWeeks <= 1, true,
+      'three old-scorer weeks must not count toward the streak');
   });
 });

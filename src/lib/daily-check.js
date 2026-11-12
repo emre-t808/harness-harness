@@ -25,6 +25,7 @@ import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
 import { withFileLock } from './file-lock.js';
 import { updateFederatedIndex } from './federated-index.js';
 import { aggregateFileActivity, writeFileActivity } from './activity.js';
+import { SCORER_VERSION } from './session-summary.js';
 
 const AGGREGATION_INTERVAL_HOURS = 24;
 const ANALYSIS_WINDOW_DAYS = 7;
@@ -94,6 +95,7 @@ export async function runEvidencePipeline(paths, logEvent) {
   const { withFileLockAsync } = await import('./file-lock.js');
   return withFileLockAsync(paths.evidenceStateFile, async () => {
     let store = evidence.loadEvidenceState(paths);
+    if (store) store = evidence.refreshEligibility(store);
     for (const artifact of findSummaryArtifacts(ANALYSIS_WINDOW_DAYS, paths)) {
       const classified = classifySummaryArtifact(artifact);
       if (classified.kind === 'legacy' || classified.kind === 'unparseable') continue;
@@ -135,7 +137,10 @@ export function checkApplyReadiness(paths, store) {
       const readiness = JSON.parse(fs.readFileSync(paths.reliabilityReadinessFile, 'utf8'));
       if (readiness.schemaVersion !== 2) reasons.push(`readiness schemaVersion ${readiness.schemaVersion} unsupported`);
       if (store && readiness.evidenceEpoch !== store.epoch.startedAt) reasons.push('readiness epoch does not match evidence store');
-      if (readiness.scorerVersion !== 'behavioral-v2') reasons.push(`readiness scorerVersion ${readiness.scorerVersion} unsupported`);
+      if (readiness.scorerVersion !== SCORER_VERSION) {
+        reasons.push(`readiness scorerVersion ${readiness.scorerVersion} is not the current scorer ${SCORER_VERSION}: `
+          + `its sessions are report-only now; re-validate readiness with sessions scored by ${SCORER_VERSION}`);
+      }
     } catch (err) {
       reasons.push(`readiness unreadable: ${err.message}`);
     }
