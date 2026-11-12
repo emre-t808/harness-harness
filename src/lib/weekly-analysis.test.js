@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { classifySummaryArtifact, findSummaryArtifacts, generateProposals } from './weekly-analysis.js';
+import { SCORER_VERSION } from './session-summary.js';
 
 function makeRuleAggregate(score, sessionsInjected = 10) {
   return {
@@ -205,7 +206,7 @@ describe('summary artifact classification (T2)', () => {
     fs.writeFileSync(path.join(tracesDir, DAY, 'claude--s1-summary.json'), JSON.stringify({
       schemaVersion: 2, client: 'claude', sessionId: 's1', storageKey: 'claude--s1',
       startedAt: '2026-09-06T10:00:00Z', lastEventAt: '2026-09-06T11:00:00Z',
-      route: 'general', scorerVersion: 'behavioral-v2',
+      route: 'general', scorerVersion: SCORER_VERSION,
       signalsHash: 'x'.repeat(64), sourceHash: 'y'.repeat(64),
       measurementStatus: 'valid', degradedReasons: [],
       scores: [{ rule: 'TR-001', score: 0.5, evidence: 'behavioral-compliance' }],

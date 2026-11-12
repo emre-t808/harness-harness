@@ -405,3 +405,57 @@ describe('scoreRuleCompliance — file_not_modified signal', () => {
     assert.equal(scores['GEN-001'].evidence, 'violated');
   });
 });
+
+// D186 / OI-R78: for a rule with signals, behaviour decides. Part Y's session
+// 01e39cd3 cited FO-005 25 times, wrote no PRD, and scored it 1.0 'referenced',
+// which is how a citation passed the check meant to prove the rule was applied.
+describe('scoreRuleCompliance — a citation alone never scores a rule with signals (D186)', () => {
+  const FO005 = {
+    id: 'FO-005',
+    behavioral_signals: [
+      { trigger: { tool: ['Write', 'Edit'], file_glob: '{reports,context}/**/*prd*.md' }, expect: { absent: true } },
+      { trigger: { tool: ['Write'], file_glob: 'docs/prds/*.md' }, expect: { present: true } },
+    ],
+  };
+  const REVIEW = {
+    id: 'RV-001',
+    behavioral_signals: [{ trigger: { tool: ['Write'], file_glob: 'docs/**/*.md' }, expect: { preceded_by_read: 'docs/style.md' } }],
+  };
+
+  it('a cited rule whose checks never fired is not-applicable, not referenced (the 01e39cd3 case)', () => {
+    const events = [{ tool: 'Edit', referenced_context: ['FO-005'], files_touched: ['src/lib/x.js'] }];
+    assert.deepEqual(scoreRuleCompliance(events, [FO005])['FO-005'], { score: null, evidence: 'not-applicable' });
+  });
+
+  it('a cited rule whose check fired with no compliant result is applicable-unmet 0.0', () => {
+    const events = [{ tool: 'Write', referenced_context: ['RV-001'], files_touched: ['docs/guide.md'] }];
+    assert.deepEqual(scoreRuleCompliance(events, [REVIEW])['RV-001'], { score: 0.0, evidence: 'applicable-unmet' });
+  });
+
+  it('cited and behavioural still scores verified-compliance 1.5', () => {
+    const events = [{ tool: 'Write', referenced_context: ['FO-005'], files_touched: ['docs/prds/x-prd.md'] }];
+    assert.deepEqual(scoreRuleCompliance(events, [FO005])['FO-005'], { score: 1.5, evidence: 'verified-compliance' });
+  });
+
+  it('a cited rule without signals still scores referenced 1.0', () => {
+    const events = [{ tool: 'Read', referenced_context: ['CS-003'], files_touched: ['a.js'] }];
+    assert.deepEqual(scoreRuleCompliance(events, [{ id: 'CS-003', text: 'functions under 40 lines' }])['CS-003'],
+      { score: 1.0, evidence: 'referenced' });
+  });
+
+  it('prevented-mistake does not score 2.0 when none of the rule checks fired', () => {
+    const events = [
+      { tool: 'Read', input_summary: 'context/anti-patterns/file-organization.md', referenced_context: ['FO-005'], files_touched: [] },
+      { tool: 'Edit', referenced_context: [], files_touched: ['src/lib/x.js'] },
+    ];
+    assert.deepEqual(scoreRuleCompliance(events, [FO005])['FO-005'], { score: null, evidence: 'not-applicable' });
+  });
+
+  it('prevented-mistake still scores 2.0 when a check fired and nothing was violated', () => {
+    const events = [
+      { tool: 'Read', input_summary: 'context/anti-patterns/file-organization.md', referenced_context: ['FO-005'], files_touched: [] },
+      { tool: 'Write', referenced_context: [], files_touched: ['docs/prds/x-prd.md'] },
+    ];
+    assert.deepEqual(scoreRuleCompliance(events, [FO005])['FO-005'], { score: 2.0, evidence: 'prevented-mistake' });
+  });
+});

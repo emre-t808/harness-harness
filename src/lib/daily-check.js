@@ -25,6 +25,7 @@ import { cleanupTraceFiles, trimIndex } from './trace-cleanup.js';
 import { withFileLock } from './file-lock.js';
 import { updateFederatedIndex } from './federated-index.js';
 import { aggregateFileActivity, writeFileActivity } from './activity.js';
+import { SCORER_VERSION } from './session-summary.js';
 
 const AGGREGATION_INTERVAL_HOURS = 24;
 const ANALYSIS_WINDOW_DAYS = 7;
@@ -94,6 +95,7 @@ export async function runEvidencePipeline(paths, logEvent) {
   const { withFileLockAsync } = await import('./file-lock.js');
   return withFileLockAsync(paths.evidenceStateFile, async () => {
     let store = evidence.loadEvidenceState(paths);
+    if (store) store = evidence.refreshEligibility(store);
     for (const artifact of findSummaryArtifacts(ANALYSIS_WINDOW_DAYS, paths)) {
       const classified = classifySummaryArtifact(artifact);
       if (classified.kind === 'legacy' || classified.kind === 'unparseable') continue;
@@ -135,7 +137,10 @@ export function checkApplyReadiness(paths, store) {
       const readiness = JSON.parse(fs.readFileSync(paths.reliabilityReadinessFile, 'utf8'));
       if (readiness.schemaVersion !== 2) reasons.push(`readiness schemaVersion ${readiness.schemaVersion} unsupported`);
       if (store && readiness.evidenceEpoch !== store.epoch.startedAt) reasons.push('readiness epoch does not match evidence store');
-      if (readiness.scorerVersion !== 'behavioral-v2') reasons.push(`readiness scorerVersion ${readiness.scorerVersion} unsupported`);
+      if (readiness.scorerVersion !== SCORER_VERSION) {
+        reasons.push(`readiness scorerVersion ${readiness.scorerVersion} is not the current scorer ${SCORER_VERSION}: `
+          + `its sessions are report-only now; re-validate readiness with sessions scored by ${SCORER_VERSION}`);
+      }
     } catch (err) {
       reasons.push(`readiness unreadable: ${err.message}`);
     }
@@ -270,6 +275,16 @@ export async function runAggregation(paths) {
         // Snapshot all route configs for this rule before mutating, then apply.
         try {
           if (proposal.kind === 'promote') {
+            // A promotion that cannot carry the rule's text is refused (OI-R65):
+            // log the refusal, take no snapshot and start no cooldown.
+            const preview = applyPromotion(proposal.rule, paths, true);
+            if (preview.refused) {
+              logEvent(paths.eventsLogFile, {
+                hook: 'Stop', handler: 'daily-check.js', phase: 'decision',
+                decision: { action: 'auto-promote-refused', rule: proposal.rule, reason: preview.refused, event_id: eventId },
+              });
+              continue;
+            }
             // applyPromotion edits every route file; snapshot them all.
             const routeFiles = fs.existsSync(paths.routesDir)
               ? fs.readdirSync(paths.routesDir).filter(f => f.endsWith('.md'))

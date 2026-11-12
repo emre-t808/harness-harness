@@ -13,6 +13,7 @@ import path from 'path';
 import {
   hashCanonical,
   resolveStorageKey,
+  SCORER_VERSION,
   validateSummaryV2,
 } from './session-summary.js';
 import { processSession } from './rule-rating.js';
@@ -71,12 +72,31 @@ function eligibilityFor(node, epoch) {
   if (started === null || started < Date.parse(epoch.startedAt)) {
     return { eligibility: 'report-only', reason: 'started-before-epoch' };
   }
+  // Nothing re-scores old sessions, and ratings are cumulative Elo with no
+  // decay: one store must not mix scorers, or evidence the current scorer
+  // would reject keeps voting in every later week (OI-R79, D190).
+  if (canonical.scorerVersion !== SCORER_VERSION) {
+    return { eligibility: 'report-only', reason: 'older-scorer-version' };
+  }
   return { eligibility: 'eligible', reason: 'valid-post-epoch-observation' };
 }
 
 function finalizeNode(node, epoch) {
   const { eligibility, reason } = eligibilityFor(node, epoch);
   return { ...node, eligibility, eligibilityReason: reason };
+}
+
+/**
+ * Re-derive every node's stored eligibility under the current rules. Stored
+ * eligibility is decided at ingest; after a scorer bump the existing nodes
+ * still say 'eligible' until this runs. Pure: returns a new store.
+ */
+export function refreshEligibility(store) {
+  const next = cloneStore(store);
+  for (const [key, node] of Object.entries(next.observations)) {
+    next.observations[key] = finalizeNode(node, next.epoch);
+  }
+  return next;
 }
 
 function latestKnown(node) {

@@ -48,3 +48,16 @@ describe('resolvePaths — routesDir', () => {
     assert.equal(resolvePaths(dir).routesDir, path.join(dir, '.harness', 'routes'));
   });
 });
+
+// OI-R65: a promotion must carry the rule's text, which lives in the project's
+// catalogue. Unset means unknown, and apply refuses rather than guess.
+describe('resolvePaths — rulesCatalogDir', () => {
+  it('is null when config does not name a catalogue', () => {
+    assert.equal(resolvePaths(project(JSON.stringify({ routesDir: 'context/routes' }))).rulesCatalogDir, null);
+  });
+
+  it('honors a relative rulesCatalogDir, resolved against the project root', () => {
+    const dir = project(JSON.stringify({ rulesCatalogDir: 'context/anti-patterns' }));
+    assert.equal(resolvePaths(dir).rulesCatalogDir, path.join(dir, 'context', 'anti-patterns'));
+  });
+});
