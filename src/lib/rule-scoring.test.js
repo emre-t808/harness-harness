@@ -234,37 +234,21 @@ describe('rule-registry — invalid content_includes regex', () => {
 
 describe('scoreRuleCompliance — applicability (not-applicable vs applicable-unmet)', () => {
   it('scores null / not-applicable when rule has signals but no trigger fired', () => {
-    // Session touched no code files → a code-style rule was never applicable.
+    // Session touched no work-status file → the rule was never applicable.
     // Old behavior scored this 0.0/ignored, feeding false negatives to Elo.
     const events = [
       { tool: 'Read', referenced_context: [], files_touched: ['docs/x.md'] },
     ];
     const rules = [{
-      id: 'CS-001',
-      text: 'Functions under 40 lines',
+      id: 'WS-001',
+      text: 'Update work-status',
       behavioral_signals: [
-        { trigger: { tool: ['Write', 'Edit'], file_glob: '**/*.{js,ts,py,sh}' }, expect: { applicable_only: true } }
+        { trigger: { tool: ['Write', 'Edit'], file_glob: '**/work-status.md' }, expect: { present: true } }
       ]
     }];
     const scores = scoreRuleCompliance(events, rules);
-    assert.equal(scores['CS-001'].score, null);
-    assert.equal(scores['CS-001'].evidence, 'not-applicable');
-  });
-
-  it('scores 0.0 / applicable-unmet when applicable_only trigger fires', () => {
-    const events = [
-      { tool: 'Write', referenced_context: [], files_touched: ['scripts/foo.js'] },
-    ];
-    const rules = [{
-      id: 'CS-001',
-      text: 'Functions under 40 lines',
-      behavioral_signals: [
-        { trigger: { tool: ['Write', 'Edit'], file_glob: '**/*.{js,ts,py,sh}' }, expect: { applicable_only: true } }
-      ]
-    }];
-    const scores = scoreRuleCompliance(events, rules);
-    assert.equal(scores['CS-001'].score, 0.0);
-    assert.equal(scores['CS-001'].evidence, 'applicable-unmet');
+    assert.equal(scores['WS-001'].score, null);
+    assert.equal(scores['WS-001'].evidence, 'not-applicable');
   });
 
   it('labels unmet content_includes as applicable-unmet, not ignored', () => {
@@ -457,5 +441,41 @@ describe('scoreRuleCompliance — a citation alone never scores a rule with sign
       { tool: 'Write', referenced_context: [], files_touched: ['docs/prds/x-prd.md'] },
     ];
     assert.deepEqual(scoreRuleCompliance(events, [FO005])['FO-005'], { score: 2.0, evidence: 'prevented-mistake' });
+  });
+});
+
+// D193 / OI-R81: CS-003's only signal is applicable_only, which says when the
+// rule applies but declares no behaviour. Under D186 alone such a rule could
+// only score 0.0 or n/a, so its rating could only fall, a demotion made by the
+// measurement. It is scored like a rule without signals: a citation counts.
+describe('scoreRuleCompliance — applicable_only-only rules score like signal-less rules (D193)', () => {
+  const CODE = { trigger: { tool: ['Write', 'Edit'], file_glob: '**/*.{js,ts,py,sh}' }, expect: { applicable_only: true } };
+
+  it('a cited applicable_only rule scores 1.0 referenced when code was written', () => {
+    const events = [{ tool: 'Write', referenced_context: ['CS-003'], files_touched: ['scripts/foo.js'] }];
+    const scores = scoreRuleCompliance(events, [{ id: 'CS-003', behavioral_signals: [CODE] }]);
+    assert.deepEqual(scores['CS-003'], { score: 1.0, evidence: 'referenced' });
+  });
+
+  it('a cited applicable_only rule scores 1.0 referenced with no code written, like any signal-less rule', () => {
+    const events = [{ tool: 'Read', referenced_context: ['CS-003'], files_touched: ['docs/x.md'] }];
+    const scores = scoreRuleCompliance(events, [{ id: 'CS-003', behavioral_signals: [CODE] }]);
+    assert.deepEqual(scores['CS-003'], { score: 1.0, evidence: 'referenced' });
+  });
+
+  it('an uncited applicable_only rule scores 0.0 ignored, as a signal-less rule does', () => {
+    const events = [{ tool: 'Write', referenced_context: [], files_touched: ['scripts/foo.js'] }];
+    const scores = scoreRuleCompliance(events, [{ id: 'CS-003', behavioral_signals: [CODE] }]);
+    assert.deepEqual(scores['CS-003'], { score: 0.0, evidence: 'ignored' });
+  });
+
+  it('a rule with applicable_only AND a real check is still scored by behaviour (D186)', () => {
+    const events = [{ tool: 'Write', referenced_context: ['X-001'], files_touched: ['scripts/foo.js'] }];
+    const rules = [{ id: 'X-001', behavioral_signals: [
+      CODE,
+      { trigger: { tool: ['Write'], file_glob: 'reports/**' }, expect: { content_includes: 'Data Quality Statement' } },
+    ] }];
+    const scores = scoreRuleCompliance(events, rules);
+    assert.deepEqual(scores['X-001'], { score: 0.0, evidence: 'applicable-unmet' });
   });
 });
