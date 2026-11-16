@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { completedWeeks, evaluateStability, weekStartOf } from './rule-stability.js';
 import { createEvidenceStore, upsertObservation } from './evidence-state.js';
+import { POPULATION_MIN_SESSIONS, computePopulationStats, processSession } from './rule-rating.js';
 import { SCORER_VERSION } from './session-summary.js';
 
 const EPOCH_MONDAY = '2026-08-03T00:00:00Z'; // a Monday 00:00 UTC
@@ -154,5 +155,46 @@ describe('evaluateStability — scorer-version boundary', () => {
     assert.deepEqual(stability.weeklyDetail.map((w) => w.hadEvidence), [false, false, false, true]);
     assert.equal(stability.rules['TR-001'].consecutiveQualifiedWeeks <= 1, true,
       'three old-scorer weeks must not count toward the streak');
+  });
+});
+
+// OI-R84: the threshold (mean + σ) comes only from rules with POPULATION_MIN_SESSIONS
+// sessions, but every applicable rule was tested against it. A rule seen once sits
+// near the 1500 start rating, so it cleared a threshold that well-sampled, mostly
+// ignored rules had pulled down: week 11-09 labelled 9 rules qualified, 8 of them on
+// one session (FD-001 at 1479.4 against 1458.4, on a single score of 0).
+describe('evaluateStability — population floor (OI-R84)', () => {
+  const I = { score: 0.0, evidence: 'ignored' };
+  const R = { score: 1.0, evidence: 'referenced' };
+  const WEEK0 = [ // three mostly-ignored rules, each well sampled
+    [['A', I], ['B', I], ['C', R]], [['A', I], ['B', I], ['C', I]], [['A', I], ['B', R], ['C', I]],
+    [['A', I], ['B', I], ['C', I]], [['A', I], ['B', I], ['C', I]],
+  ];
+  const WEEK1 = [[['A', I], ['B', I], ['C', I], ['NEW', I]]]; // NEW appears once, ignored
+  const toScores = (session) => session.map(([rule, s]) => ({ rule, ...s }));
+
+  it('fixture: the one-session rule clears the threshold, as FD-001 did on 11-09', () => {
+    let state = { rules: {} };
+    for (const session of [...WEEK0, ...WEEK1]) {
+      state = processSession(state, toScores(session).map((s) => ({ ruleId: s.rule, evidence: s.evidence })));
+    }
+    const population = computePopulationStats(state);
+    assert.equal(state.rules.NEW.sessions_injected, 1);
+    assert.ok(state.rules.NEW.rating >= population.mean + population.std_dev,
+      `NEW ${state.rules.NEW.rating} must clear ${population.mean + population.std_dev}`);
+    assert.ok(population.std_dev > 0, 'the population has dispersion, so the floor is what decides');
+  });
+
+  it('a rule under the population floor reads insufficient-evidence, not qualified', () => {
+    let store = createEvidenceStore(EPOCH_MONDAY);
+    const sessions = [...WEEK0.map((s, i) => [s, 1 + i]), ...WEEK1.map((s) => [s, 9])];
+    sessions.forEach(([session, day], i) => {
+      const ts = new Date(Date.parse(EPOCH_MONDAY) + day * 86400000 + i * 3600000).toISOString();
+      store = upsertObservation(store, observation(`floor${i}`, ts, toScores(session)), { now: NOW }).store;
+    });
+    const week1 = evaluateStability(store, { now: NOW }).weeklyDetail[1];
+    assert.equal(POPULATION_MIN_SESSIONS, 3);
+    assert.equal(week1.rules.NEW, 'insufficient-evidence');
+    assert.equal(week1.rules.A, 'below-threshold', 'a sampled rule is still measured');
   });
 });

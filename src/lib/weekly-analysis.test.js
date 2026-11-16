@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { classifySummaryArtifact, findSummaryArtifacts, generateProposals } from './weekly-analysis.js';
+import { classifySummaryArtifact, findRecentSummaries, findSummaryArtifacts, generateProposals } from './weekly-analysis.js';
 import { SCORER_VERSION } from './session-summary.js';
 
 function makeRuleAggregate(score, sessionsInjected = 10) {
@@ -232,6 +232,42 @@ describe('summary artifact classification (T2)', () => {
     assert.equal(byKey.old.kind, 'legacy');
     assert.equal(byKey.old.parsed.route, 'general');
     assert.equal(byKey.bad.kind, 'invalid-v2');
+    fs.rmSync(tracesDir, { recursive: true, force: true });
+  });
+});
+
+// OI-R75: the Markdown reports counted a session once per summary file. A session
+// whose events cross 00:00Z has a summary in each date dir (the newest is built from
+// all of them), and a pre-November session can have a raw and a claude-- copy in one
+// dir. The 11-16 7-day window held 45 summary files for 41 sessions.
+describe('findRecentSummaries — one summary per session (OI-R75)', () => {
+  const day = (offset) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+  const TODAY = day(0);
+  const YESTERDAY = day(1);
+
+  function traces(files) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-dedupe-'));
+    for (const [dateDir, name] of files) {
+      fs.mkdirSync(path.join(dir, dateDir), { recursive: true });
+      fs.writeFileSync(path.join(dir, dateDir, name), '**Route:** general\n');
+    }
+    return dir;
+  }
+
+  it('a session with summaries in two date dirs counts once, from the newest dir', () => {
+    const tracesDir = traces([[YESTERDAY, 'claude--s1-summary.md'], [TODAY, 'claude--s1-summary.md'], [YESTERDAY, 'claude--s2-summary.md']]);
+    const found = findRecentSummaries(7, { tracesDir }).map((p) => path.relative(tracesDir, p));
+    assert.deepEqual(found.sort(), [path.join(TODAY, 'claude--s1-summary.md'), path.join(YESTERDAY, 'claude--s2-summary.md')].sort());
+    // The evidence pipeline still sees every file: the store keeps one node per key
+    // and resolves revisions by lastEventAt itself.
+    assert.equal(findSummaryArtifacts(7, { tracesDir }).length, 3);
+    fs.rmSync(tracesDir, { recursive: true, force: true });
+  });
+
+  it('a raw and a prefixed copy in one dir count once, as the prefixed copy', () => {
+    const tracesDir = traces([[TODAY, 's3-summary.md'], [TODAY, 'claude--s3-summary.md'], [TODAY, 'codex--s4-summary.md']]);
+    const found = findRecentSummaries(7, { tracesDir }).map((p) => path.basename(p));
+    assert.deepEqual(found.sort(), ['claude--s3-summary.md', 'codex--s4-summary.md']);
     fs.rmSync(tracesDir, { recursive: true, force: true });
   });
 });

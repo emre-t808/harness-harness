@@ -120,3 +120,29 @@ describe('updateFederatedIndex', () => {
     assert.equal(matches.length, 1, 'should not duplicate');
   });
 });
+
+// OI-R75: sessions_7d counts sessions, not summary files.
+describe('updateFederatedIndex — sessions_7d (OI-R75)', () => {
+  it('counts a session with summaries in two date dirs, or a raw and a prefixed copy, once', async () => {
+    const repoDir = fs.mkdtempSync(path.join(TMP_ROOT, 'repo-span-'));
+    const traces = path.join(repoDir, '.claude', 'traces');
+    const day = (offset) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+    for (const [d, name] of [[1, 'claude--s1-summary.md'], [0, 'claude--s1-summary.md'], [0, 's2-summary.md'], [0, 'claude--s2-summary.md']]) {
+      fs.mkdirSync(path.join(traces, day(d)), { recursive: true });
+      fs.writeFileSync(path.join(traces, day(d), name), '## s');
+    }
+    fs.mkdirSync(path.join(repoDir, '.harness', 'memory'), { recursive: true });
+    fs.mkdirSync(globalConfigDir(), { recursive: true });
+    fs.writeFileSync(reposFilePath(), `repos:\n  - name: span\n    path: ${repoDir}\n    registered: 2026-11-16\n`);
+    await updateFederatedIndex({
+      projectDir: repoDir,
+      harnessDir: path.join(repoDir, '.harness'),
+      configFile: path.join(repoDir, '.harness', 'config.json'),
+      tracesDir: traces,
+      effectivenessFile: path.join(repoDir, '.harness', 'memory', 'harness-effectiveness.md'),
+      localEffectivenessFile: null,
+      tracePatternsFile: path.join(repoDir, '.harness', 'memory', 'trace-patterns.md'),
+    });
+    assert.equal(readTraceIndex().find((r) => r.path === repoDir).sessions_7d, 2);
+  });
+});

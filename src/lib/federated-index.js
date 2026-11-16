@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { join } from 'path';
 import { withFileLock } from './file-lock.js';
+import { findRecentSummaries } from './weekly-analysis.js';
 
 export function globalConfigDir() {
   return join(process.env.HOME || '/tmp', '.config', 'harness-harness');
@@ -187,19 +188,8 @@ export async function updateFederatedIndex(paths) {
   }
 
   // Count recent sessions
-  let sessions7d = 0;
-  if (fs.existsSync(paths.tracesDir)) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const recentDirs = fs.readdirSync(paths.tracesDir).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= cutoffStr);
-    for (const dd of recentDirs) {
-      const dirPath = path.join(paths.tracesDir, dd);
-      if (fs.statSync(dirPath).isDirectory()) {
-        sessions7d += fs.readdirSync(dirPath).filter(f => f.endsWith('-summary.md')).length;
-      }
-    }
-  }
+  // Sessions, not summary files: one session can have several (OI-R75).
+  const sessions7d = findRecentSummaries(7, paths).length;
 
   // Read top intents from recent summaries
   const topIntents = [];
