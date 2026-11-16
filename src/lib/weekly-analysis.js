@@ -8,7 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { resolvePaths } from './paths.js';
-import { validateSummaryV2 } from './session-summary.js';
+import { KNOWN_CLIENTS, validateSummaryV2 } from './session-summary.js';
 
 // Thresholds
 // Phase 8: absolute constants are now fallbacks; primary decisions are Elo-anchored.
@@ -77,7 +77,29 @@ export function parseSlotUtilization(content) {
 // Summary discovery
 // ---------------------------------------------------------------------------
 
+const CLIENT_PREFIX_RE = new RegExp(`^(?:${KNOWN_CLIENTS.join('|')})--`);
+
+/**
+ * Markdown summaries in the window, one per session (OI-R75). A session whose
+ * events cross 00:00Z has a summary in each date dir, and the newest is built
+ * from all of them; a pre-November session can have a raw and a <client>--
+ * copy in one dir. The newest dir wins, and the prefixed copy within a dir.
+ */
 export function findRecentSummaries(days, paths) {
+  const bySession = new Map();
+  for (const file of listSummaryFiles(days, paths)) {
+    const name = path.basename(file);
+    const key = name.replace(/-summary\.md$/, '').replace(CLIENT_PREFIX_RE, '');
+    const prefixed = CLIENT_PREFIX_RE.test(name);
+    const held = bySession.get(key);
+    if (held && held.dir === path.dirname(file) && held.prefixed && !prefixed) continue;
+    bySession.set(key, { file, dir: path.dirname(file), prefixed });
+  }
+  return [...bySession.values()].map((s) => s.file).sort();
+}
+
+/** Every Markdown summary file in the window, sorted by path (date dirs ascending). */
+function listSummaryFiles(days, paths) {
   const summaries = [];
   if (!fs.existsSync(paths.tracesDir)) return summaries;
 
@@ -108,7 +130,9 @@ export function findRecentSummaries(days, paths) {
  */
 export function findSummaryArtifacts(days, paths) {
   const artifacts = new Map();
-  for (const mdPath of findRecentSummaries(days, paths)) {
+  // Every file, not one per session: the evidence store keys by session and
+  // resolves revisions by lastEventAt itself.
+  for (const mdPath of listSummaryFiles(days, paths)) {
     const key = mdPath.replace(/-summary\.md$/, '');
     const jsonPath = `${key}-summary.json`;
     artifacts.set(key, { key, mdPath, jsonPath: fs.existsSync(jsonPath) ? jsonPath : null });

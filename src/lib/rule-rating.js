@@ -9,6 +9,9 @@ const STARTING_RATING = 1500;
 const K_FACTOR_COLD = 40;
 const K_FACTOR_STABLE = 20;
 const COLD_START_SESSIONS = 10;
+// A rule joins the population (mean + σ threshold) only from this many sessions.
+// Stability uses the same floor (OI-R84).
+export const POPULATION_MIN_SESSIONS = 3;
 
 export function evidenceToMatchScore(evidence) {
   switch (evidence) {
@@ -93,7 +96,7 @@ export function updateRatingsFromAggregation(state, aggregated) {
 
 export function computePopulationStats(state) {
   const ratings = Object.values(state.rules || {})
-    .filter(entry => (entry.sessions_injected || 0) >= 3)
+    .filter(entry => (entry.sessions_injected || 0) >= POPULATION_MIN_SESSIONS)
     .map(entry => entry.rating);
 
   if (ratings.length === 0) {

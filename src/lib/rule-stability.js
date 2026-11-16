@@ -7,13 +7,14 @@
  * week cannot move it. A rule qualifies for a week only with at least one
  * eligible applicable observation ending in that week, a rating at or above
  * the mean-plus-standard-deviation threshold of the through-week snapshot,
- * and nonzero dispersion in that population. No-evidence and below-threshold
+ * at least the population's session floor (POPULATION_MIN_SESSIONS), and
+ * nonzero dispersion in that population. No-evidence and below-threshold
  * weeks reset the consecutive streak. Incomplete weeks never count, and the
  * first partial epoch week counts only when the epoch starts exactly at
  * Monday 00:00 UTC.
  */
 
-import { computePopulationStats, processSession } from './rule-rating.js';
+import { POPULATION_MIN_SESSIONS, computePopulationStats, processSession } from './rule-rating.js';
 import { computeGeneration, eligibleObservations } from './evidence-state.js';
 
 export const STABILITY_SCHEMA_VERSION = 2;
@@ -63,6 +64,9 @@ function snapshotRatings(observations, boundaryMs) {
 function weekReason(rule, inWeek, snapshot, population) {
   const applicable = inWeek.some((o) => applicableRules(o).includes(rule));
   if (!applicable) return 'insufficient-evidence';
+  // Under the population floor a rule is not in the population it would be tested
+  // against, and a rule seen once still sits near the start rating (OI-R84).
+  if ((snapshot.rules[rule]?.sessions_injected ?? 0) < POPULATION_MIN_SESSIONS) return 'insufficient-evidence';
   if (population.count === 0 || population.std_dev === 0) return 'zero-dispersion';
   const rating = snapshot.rules[rule]?.rating ?? 0;
   if (rating < population.mean + population.std_dev) return 'below-threshold';
